@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle, Clock, Search, LogOut } from 'lucide-react';
+import { CheckCircle, Clock, Search, LogOut, X, LogIn, LogOut as LogOutIcon } from 'lucide-react';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
 import useAuthStore from '../../store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
 
-// Helper to format dates nicely
 const formatDate = (dateString) => {
+  if (!dateString) return 'N/A';
   const options = { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
   return new Date(dateString).toLocaleDateString('en-IN', options);
 };
@@ -15,7 +15,12 @@ export default function ClerkDashboard() {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('PENDING_CLERK_REVIEW');
-  const [isVerifying, setIsVerifying] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(null);
+  
+  // Modal States
+  const [modalType, setModalType] = useState(null); // 'checkin' | 'checkout' | null
+  const [selectedBooking, setSelectedBooking] = useState(null);
+  const [formData, setFormData] = useState({});
 
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
@@ -26,7 +31,6 @@ export default function ClerkDashboard() {
 
   const fetchBookings = async () => {
     try {
-      // The backend route for admins/clerks to get all bookings
       const response = await api.get('/auth/admin/bookings');
       setBookings(response.data.data);
     } catch (error) {
@@ -37,16 +41,53 @@ export default function ClerkDashboard() {
   };
 
   const handleVerify = async (bookingId) => {
-    setIsVerifying(bookingId);
+    setIsProcessing(bookingId);
     try {
-      // Hit the clerk verification endpoint
       await api.patch(`/auth/admin/bookings/${bookingId}/verify`);
       toast.success('Booking verified and sent to Admin!');
-      fetchBookings(); // Refresh the list
+      fetchBookings();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to verify booking');
     } finally {
-      setIsVerifying(null);
+      setIsProcessing(null);
+    }
+  };
+
+  const openModal = (type, booking) => {
+    setModalType(type);
+    setSelectedBooking(booking);
+    setFormData(type === 'checkin' 
+      ? { aadhaarNumber: '', actualGuestCount: booking.guestCount } 
+      : { startMeterReading: '', endMeterReading: '', generatorHours: 0, penaltyAmount: 0, penaltyReason: '' }
+    );
+  };
+
+  const handleActionSubmit = async (e) => {
+    e.preventDefault();
+    setIsProcessing(selectedBooking.id);
+    try {
+      if (modalType === 'checkin') {
+        await api.post(`/billing/${selectedBooking.id}/checkin`, {
+          aadhaarNumber: formData.aadhaarNumber,
+          actualGuestCount: Number(formData.actualGuestCount)
+        });
+        toast.success('Check-in successful!');
+      } else {
+        const payload = {
+          startMeterReading: Number(formData.startMeterReading),
+          endMeterReading: Number(formData.endMeterReading),
+          generatorHours: Number(formData.generatorHours),
+          penalties: formData.penaltyAmount > 0 ? [{ reason: formData.penaltyReason, amount: Number(formData.penaltyAmount) }] : []
+        };
+        await api.post(`/billing/${selectedBooking.id}/checkout`, payload);
+        toast.success('Check-out & final billing generated!');
+      }
+      setModalType(null);
+      fetchBookings();
+    } catch (error) {
+      toast.error(error.response?.data?.message || `Failed to ${modalType}`);
+    } finally {
+      setIsProcessing(null);
     }
   };
 
@@ -55,9 +96,9 @@ export default function ClerkDashboard() {
     navigate('/clerk/login');
   };
 
-  // Filter bookings based on the active tab
   const filteredBookings = bookings.filter((b) => {
     if (activeTab === 'ALL') return true;
+    if (activeTab === 'ACTIVE') return ['CONFIRMED', 'CHECKED_IN'].includes(b.status);
     return b.status === activeTab;
   });
 
@@ -65,7 +106,6 @@ export default function ClerkDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Top Navbar */}
       <nav className="bg-green-700 text-white shadow-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
@@ -83,40 +123,20 @@ export default function ClerkDashboard() {
       </nav>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        
-        {/* Header & Tabs */}
         <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
           <h1 className="text-2xl font-bold text-gray-900">Booking Verification Queue</h1>
-          
           <div className="flex bg-white rounded-lg shadow-sm p-1 border">
-            <button 
-              onClick={() => setActiveTab('PENDING_CLERK_REVIEW')}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === 'PENDING_CLERK_REVIEW' ? 'bg-green-100 text-green-800' : 'text-gray-600 hover:bg-gray-50'}`}
-            >
-              Needs Verification
-            </button>
-            <button 
-              onClick={() => setActiveTab('PENDING_ADMIN_APPROVAL')}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === 'PENDING_ADMIN_APPROVAL' ? 'bg-orange-100 text-orange-800' : 'text-gray-600 hover:bg-gray-50'}`}
-            >
-              Awaiting Admin
-            </button>
-            <button 
-              onClick={() => setActiveTab('ALL')}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === 'ALL' ? 'bg-gray-200 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}
-            >
-              All Bookings
-            </button>
+            <button onClick={() => setActiveTab('PENDING_CLERK_REVIEW')} className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === 'PENDING_CLERK_REVIEW' ? 'bg-green-100 text-green-800' : 'text-gray-600 hover:bg-gray-50'}`}>Needs Verification</button>
+            <button onClick={() => setActiveTab('ACTIVE')} className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === 'ACTIVE' ? 'bg-blue-100 text-blue-800' : 'text-gray-600 hover:bg-gray-50'}`}>Check-in / Out</button>
+            <button onClick={() => setActiveTab('ALL')} className={`px-4 py-2 text-sm font-medium rounded-md transition ${activeTab === 'ALL' ? 'bg-gray-200 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>All Bookings</button>
           </div>
         </div>
 
-        {/* Data Table */}
         <div className="bg-white shadow-sm rounded-lg border overflow-hidden">
           {filteredBookings.length === 0 ? (
             <div className="p-12 text-center text-gray-500 flex flex-col items-center">
               <CheckCircle size={48} className="text-green-400 mb-4" />
               <p className="text-lg font-medium">No bookings found for this category.</p>
-              <p className="text-sm">You're all caught up!</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -126,7 +146,6 @@ export default function ClerkDashboard() {
                     <th className="p-4 font-medium">Ref ID</th>
                     <th className="p-4 font-medium">Dates</th>
                     <th className="p-4 font-medium">Details</th>
-                    {/* Updated Header */}
                     <th className="p-4 font-medium">Financials</th>
                     <th className="p-4 font-medium">Status</th>
                     <th className="p-4 font-medium">Action</th>
@@ -134,86 +153,53 @@ export default function ClerkDashboard() {
                 </thead>
                 <tbody className="text-sm divide-y divide-gray-100">
                   {filteredBookings.map((booking) => {
-                    // Financial Calculations for Clerk UI
-                    const total = Number(booking.calculatedAmount) + Number(booking.securityDeposit);
-                    const advance = Number(booking.advanceAmountRequested) || 0;
-                    const isPartial = booking.paymentStatus === 'PARTIAL';
-                    const isCompleted = booking.paymentStatus === 'COMPLETED';
-                    
-                    const paid = isCompleted ? total : (isPartial ? advance : 0);
-                    const due = total - paid;
+                    // FIX: Destructure nested DTO objects
+                    const schedule = booking.schedule || {};
+                    const financials = booking.financials || {};
+
+                    const total = Number(financials.calculatedAmount) + Number(financials.securityDeposit);
+                    const advance = Number(financials.advanceAmountRequested) || 0;
+                    const paid = financials.paymentStatus === 'COMPLETED' ? total : (financials.paymentStatus === 'PARTIAL' ? advance : 0);
 
                     return(
                       <tr key={booking.id} className="hover:bg-gray-50 transition">
-                        
-                        {/* Booking ID Snippet */}
-                        <td className="p-4 text-gray-900 font-mono text-xs">
-                          {booking.id.substring(0, 8).toUpperCase()}
-                        </td>
-
-                        {/* Dates */}
+                        <td className="p-4 text-gray-900 font-mono text-xs">{booking.id.substring(0, 8).toUpperCase()}</td>
                         <td className="p-4 whitespace-nowrap">
                           <div className="flex flex-col gap-1">
-                            <span className="text-green-700 font-medium">In: {formatDate(booking.startTime)}</span>
-                            <span className="text-red-700 font-medium">Out: {formatDate(booking.endTime)}</span>
+                            <span className="text-green-700 font-medium">In: {formatDate(schedule.startTime)}</span>
+                            <span className="text-red-700 font-medium">Out: {formatDate(schedule.endTime)}</span>
                           </div>
                         </td>
-
-                        {/* Details */}
                         <td className="p-4">
                           <div className="font-semibold text-gray-900">{booking.eventType}</div>
                           <div className="text-gray-500 text-xs mt-1">{booking.guestCount} Guests</div>
                         </td>
-
-                        {/* Updated Financials Column */}
                         <td className="p-4">
-                          <div className="font-bold text-gray-900">Total: ₹{total.toLocaleString('en-IN')}</div>
-                          {booking.advanceAmountRequested ? (
-                            <div className="mt-1 text-xs">
-                              <div className="text-green-600 font-medium">Paid: ₹{paid.toLocaleString('en-IN')}</div>
-                              <div className="text-red-600 font-medium">Due: ₹{due.toLocaleString('en-IN')}</div>
-                            </div>
-                          ) : (
-                            <div className="text-gray-400 text-xs italic mt-1">Advance not set</div>
-                          )}
+                          <div className="font-bold text-gray-900">Total: ₹{total ? total.toLocaleString('en-IN') : 0}</div>
+                          <div className="text-green-600 font-medium text-xs mt-1">Paid: ₹{paid.toLocaleString('en-IN')}</div>
                         </td>
-
-                        {/* Updated Status Column with Payment Badge */}
                         <td className="p-4">
-                          <span className={`px-2 py-1 text-xs font-bold rounded-full block w-max ${
-                            booking.status === 'PENDING_CLERK_REVIEW' ? 'bg-yellow-100 text-yellow-800' :
-                            booking.status === 'PENDING_ADMIN_APPROVAL' ? 'bg-orange-100 text-orange-800' :
-                            booking.status === 'PENDING_ADVANCE_PAYMENT' ? 'bg-blue-100 text-blue-800' :
-                            booking.status === 'CONFIRMED' ? 'bg-green-100 text-green-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
+                          <span className={`px-2 py-1 text-xs font-bold rounded-full block w-max bg-gray-100 text-gray-800`}>
                             {booking.status.replace(/_/g, ' ')}
                           </span>
-
-                          {booking.paymentStatus !== 'PENDING' && (
-                             <span className={`mt-1 px-2 py-0.5 text-[10px] font-bold rounded-full block w-max uppercase border ${
-                                booking.paymentStatus === 'COMPLETED' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'
-                             }`}>
-                               Pay: {booking.paymentStatus}
-                             </span>
-                          )}
                         </td>
-
-                        {/* Actions */}
-                        <td className="p-4">
-                          {booking.status === 'PENDING_CLERK_REVIEW' ? (
-                            <button
-                              onClick={() => handleVerify(booking.id)}
-                              disabled={isVerifying === booking.id}
-                              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md font-medium text-xs transition disabled:opacity-50 flex items-center gap-1"
-                            >
-                              {isVerifying === booking.id ? 'Verifying...' : <><CheckCircle size={14}/> Verify</>}
+                        <td className="p-4 flex gap-2">
+                          {booking.status === 'PENDING_CLERK_REVIEW' && (
+                            <button onClick={() => handleVerify(booking.id)} disabled={isProcessing === booking.id} className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-xs transition">
+                              Verify
                             </button>
-                          ) : (
-                            <span className="text-gray-400 text-xs italic">No action</span>
+                          )}
+                          {booking.status === 'CONFIRMED' && (
+                            <button onClick={() => openModal('checkin', booking)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1">
+                              <LogIn size={14}/> Check-In
+                            </button>
+                          )}
+                          {booking.status === 'CHECKED_IN' && (
+                            <button onClick={() => openModal('checkout', booking)} className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1">
+                              <LogOutIcon size={14}/> Check-Out
+                            </button>
                           )}
                         </td>
-
                       </tr>
                     )
                   })}
@@ -222,8 +208,58 @@ export default function ClerkDashboard() {
             </div>
           )}
         </div>
-
       </div>
+
+      {/* CHECK-IN / CHECK-OUT MODAL */}
+      {modalType && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md relative">
+            <button onClick={() => setModalType(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            <h2 className="text-xl font-bold text-gray-900 mb-4">{modalType === 'checkin' ? 'Guest Check-In' : 'Guest Check-Out'}</h2>
+            
+            <form onSubmit={handleActionSubmit} className="space-y-4">
+              {modalType === 'checkin' ? (
+                <>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Aadhaar Number / ID</label>
+                    <input type="text" required value={formData.aadhaarNumber} onChange={(e) => setFormData({...formData, aadhaarNumber: e.target.value})} className="w-full px-4 py-2 border rounded-md" placeholder="Enter ID number" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Actual Guest Count</label>
+                    <input type="number" required value={formData.actualGuestCount} onChange={(e) => setFormData({...formData, actualGuestCount: e.target.value})} className="w-full px-4 py-2 border rounded-md" />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold text-gray-700 mb-1">Start Meter</label>
+                      <input type="number" required value={formData.startMeterReading} onChange={(e) => setFormData({...formData, startMeterReading: e.target.value})} className="w-full px-4 py-2 border rounded-md" />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-sm font-bold text-gray-700 mb-1">End Meter</label>
+                      <input type="number" required value={formData.endMeterReading} onChange={(e) => setFormData({...formData, endMeterReading: e.target.value})} className="w-full px-4 py-2 border rounded-md" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Generator Hours (if used)</label>
+                    <input type="number" value={formData.generatorHours} onChange={(e) => setFormData({...formData, generatorHours: e.target.value})} className="w-full px-4 py-2 border rounded-md" />
+                  </div>
+                  <div className="p-3 bg-red-50 rounded-md border border-red-100 space-y-3">
+                    <h3 className="text-sm font-bold text-red-800">Penalties / Damages (Optional)</h3>
+                    <input type="text" placeholder="Reason (e.g. Broken chair)" value={formData.penaltyReason} onChange={(e) => setFormData({...formData, penaltyReason: e.target.value})} className="w-full px-3 py-1.5 border rounded-md text-sm" />
+                    <input type="number" placeholder="Amount (₹)" value={formData.penaltyAmount} onChange={(e) => setFormData({...formData, penaltyAmount: e.target.value})} className="w-full px-3 py-1.5 border rounded-md text-sm" />
+                  </div>
+                </>
+              )}
+
+              <button type="submit" disabled={isProcessing === selectedBooking?.id} className="w-full py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition disabled:opacity-50">
+                {isProcessing === selectedBooking?.id ? 'Processing...' : `Confirm ${modalType === 'checkin' ? 'Check-In' : 'Check-Out'}`}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

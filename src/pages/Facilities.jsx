@@ -1,37 +1,19 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../api/axios';
 import { toast } from 'react-toastify';
 import useAuthStore from '../store/useAuthStore';
-import { Search, Globe, Menu, UserCircle, Star, Heart } from 'lucide-react';
+import { Search, MapPin, UserCircle, Star, Check, Filter, ChevronDown, Calendar, Users, Layers, AlertCircle } from 'lucide-react';
 
-// Utility function to assign beautiful placeholder images based on facility type
 const getPlaceholderImage = (type, index) => {
   const images = {
-    COMPLEX: [
-      'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&q=80&w=800',
-    ],
-    ROOM: [
-      'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&q=80&w=800',
-      'https://th.bing.com/th/id/OIP.MbzYEKYFH5B2DN-eKKhtNgHaHa?w=178&h=180&c=7&r=0&o=7&dpr=1.3&pid=1.7&rm=3',
-      'https://images.unsplash.com/photo-1505691938895-1758d7def51a?auto=format&fit=crop&q=80&w=800'
-    ],
-    HALL: [
-      'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&q=80&w=800',
-      'https://images.unsplash.com/photo-1431540015161-0bf868a2d407?auto=format&fit=crop&q=80&w=800'
-    ],
-    LAWN: [
-      'https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?auto=format&fit=crop&q=80&w=800'
-    ],
-    PACKAGE: [
-      '/images/hall.jpg',
-      '/images/room.jpg'
-    ],
-    ITEM: [
-      'https://images.unsplash.com/photo-1631049307264-da0ec9d70304?auto=format&fit=crop&q=80&w=800' // Mattress
-    ]
+    COMPLEX: ['https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&q=80&w=800'],
+    ROOM: ['https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&q=80&w=800'],
+    HALL: ['https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&q=80&w=800'],
+    LAWN: ['https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?auto=format&fit=crop&q=80&w=800'],
+    PACKAGE: ['/images/hall.jpg'],
+    ITEM: ['https://images.unsplash.com/photo-1631049307264-da0ec9d70304?auto=format&fit=crop&q=80&w=800']
   };
-
   const typeImages = images[type] || images['ROOM'];
   return typeImages[index % typeImages.length];
 };
@@ -42,19 +24,51 @@ export default function Facilities() {
   const navigate = useNavigate();
   const { user, isAuthenticated, logout } = useAuthStore();
 
-  useEffect(() => {
-    const fetchFacilities = async () => {
-      try {
-        const response = await api.get('/facilities');
-        setFacilities(response.data.data);
-      } catch (error) {
-        toast.error('Failed to load facilities');
-      } finally {
-        setLoading(false);
+  // Search State
+  const [searchDates, setSearchDates] = useState({
+    startDate: '',
+    endDate: ''
+  });
+
+  const fetchFacilities = async (start = '', end = '') => {
+    setLoading(true);
+    try {
+      let url = '/facilities';
+      if (start && end) {
+        url += `?startDate=${start}&endDate=${end}`;
       }
-    };
+      
+      const response = await api.get(url);
+      
+      // FIX: Strictly ONLY show Packages and Complexes on the main dashboard list.
+      // All other atomic facilities (Rooms, Halls, Lawns, Items) will only be accessible via "Custom Package"
+      const standardPackages = response.data.data.filter(
+        f => f.facilityType === 'PACKAGE' || f.facilityType === 'COMPLEX'
+      );
+      
+      setFacilities(standardPackages);
+    } catch (error) {
+      toast.error('Failed to load facilities');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchFacilities();
   }, []);
+
+  const handleSearch = () => {
+    if ((searchDates.startDate && !searchDates.endDate) || (!searchDates.startDate && searchDates.endDate)) {
+      return toast.warn("Please select both Start and End dates.");
+    }
+    fetchFacilities(searchDates.startDate, searchDates.endDate);
+  };
+
+  const handleClearSearch = () => {
+    setSearchDates({ startDate: '', endDate: '' });
+    fetchFacilities('', '');
+  };
 
   const handleLogout = () => {
     logout();
@@ -62,121 +76,179 @@ export default function Facilities() {
   };
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* 1. Airbnb-Style Sticky Top Navigation */}
-      <nav className="sticky top-0 z-50 bg-white border-b shadow-sm">
+    <div className="min-h-screen bg-gray-100">
+      {/* Top Navbar */}
+      <nav className="bg-white border-b shadow-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-20">
-            {/* Logo Area */}
-            <div className="flex-shrink-0 flex items-center cursor-pointer" onClick={() => navigate('/facilities')}>
-              <span className="text-red-500 font-bold text-2xl tracking-tighter">Bhavan<span className="text-gray-900">Book</span></span>
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center cursor-pointer" onClick={() => navigate('/facilities')}>
+              <span className="text-blue-600 font-extrabold text-2xl tracking-tighter">Bhavan<span className="text-orange-500">Book</span></span>
             </div>
-
-            {/* Middle Search Bar (Mock) */}
-           
-            {/* Right User Menu */}
-            <div className="flex items-center gap-4">
-              <span className="hidden sm:block text-sm font-medium hover:bg-gray-100 px-4 py-2 rounded-full cursor-pointer transition">
-                Bhavan your home
-              </span>
-              <Globe size={18} className="text-gray-700 cursor-pointer" />
-              
-              <div className="flex items-center gap-2 border shadow-sm rounded-full p-2 pl-3 hover:shadow-md transition cursor-pointer group relative">
-                <Menu size={18} className="text-gray-600" />
-                <UserCircle size={30} className="text-gray-500" />
-                
-                {/* Simple Dropdown Menu */}
-                <div className="absolute right-0 top-12 w-48 bg-white border rounded-xl shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 overflow-hidden">
-                  {isAuthenticated ? (
-                    <>
-                      <div className="px-4 py-3 border-b text-sm font-semibold text-gray-800">Hi, {user?.fullName}</div>
-                      <div className="px-4 py-3 hover:bg-gray-50 text-sm cursor-pointer font-medium" onClick={() => navigate('/my-bookings')}>My Bookings</div>
-                      <div className="px-4 py-3 hover:bg-gray-50 text-sm cursor-pointer" onClick={handleLogout}>Log out</div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="px-4 py-3 hover:bg-gray-50 text-sm cursor-pointer font-semibold" onClick={() => navigate('/user/login')}>Log in</div>
-                      <div className="px-4 py-3 hover:bg-gray-50 text-sm cursor-pointer" onClick={() => navigate('/user/register')}>Sign up</div>
-                    </>
-                  )}
+            <div className="flex items-center gap-4 relative group">
+              {isAuthenticated ? (
+                <div className="flex items-center gap-2 cursor-pointer p-2 rounded-md hover:bg-gray-50">
+                  <UserCircle size={28} className="text-gray-600" />
+                  <span className="text-sm font-semibold">{user?.fullName}</span>
+                  <ChevronDown size={16} />
+                  <div className="absolute right-0 top-12 w-48 bg-white border rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
+                    <div className="px-4 py-3 hover:bg-gray-50 text-sm cursor-pointer" onClick={() => navigate('/my-bookings')}>My Bookings</div>
+                    <div className="px-4 py-3 hover:bg-gray-50 text-sm text-red-600 cursor-pointer" onClick={handleLogout}>Logout</div>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <button onClick={() => navigate('/user/login')} className="text-sm font-bold text-white bg-blue-600 px-5 py-2 rounded-full hover:bg-blue-700 transition">
+                  Login / Signup
+                </button>
+              )}
             </div>
           </div>
         </div>
       </nav>
 
-      {/* 2. Category Filter Row */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex gap-8 overflow-x-auto no-scrollbar border-b">
-        {['Rooms', 'Halls', 'Lawns', 'Packages', 'Complex', 'Extras'].map((cat) => (
-          <div key={cat} className="flex flex-col items-center gap-2 cursor-pointer text-gray-500 hover:text-black border-b-2 border-transparent hover:border-black pb-2 transition whitespace-nowrap">
-            <span className="text-sm font-medium">{cat}</span>
+      {/* Goibibo Style Search Header */}
+      <div className="bg-gradient-to-r from-blue-700 to-blue-900 pb-12 pt-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <h1 className="text-white text-3xl font-bold mb-6">Find available spaces for your dates</h1>
+          
+          <div className="bg-white rounded-xl p-2 flex flex-col md:flex-row shadow-lg gap-2">
+            <div className="flex-1 flex items-center px-4 py-3 border-b md:border-b-0 md:border-r border-gray-200">
+              <MapPin className="text-gray-400 mr-3" />
+              <div className="flex flex-col w-full">
+                <span className="text-xs text-gray-500 font-semibold uppercase">Location / Bhavan</span>
+                <input type="text" value="Raipur, Chhattisgarh" className="outline-none text-gray-900 font-bold w-full truncate bg-transparent" readOnly />
+              </div>
+            </div>
+            
+            <div className="flex-1 flex items-center px-4 py-3 border-b md:border-b-0 md:border-r border-gray-200 hover:bg-blue-50 transition rounded-md">
+              <Calendar className="text-blue-500 mr-3 shrink-0" />
+              <div className="flex flex-col w-full">
+                <span className="text-xs text-gray-500 font-semibold uppercase">Check-in</span>
+                <input 
+                  type="datetime-local" 
+                  value={searchDates.startDate} 
+                  onChange={(e) => setSearchDates({...searchDates, startDate: e.target.value})}
+                  className="outline-none text-gray-900 font-bold bg-transparent text-sm w-full cursor-pointer" 
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 flex items-center px-4 py-3 hover:bg-blue-50 transition rounded-md">
+              <Calendar className="text-orange-500 mr-3 shrink-0" />
+              <div className="flex flex-col w-full">
+                <span className="text-xs text-gray-500 font-semibold uppercase">Check-out</span>
+                <input 
+                  type="datetime-local" 
+                  value={searchDates.endDate} 
+                  onChange={(e) => setSearchDates({...searchDates, endDate: e.target.value})}
+                  className="outline-none text-gray-900 font-bold bg-transparent text-sm w-full cursor-pointer" 
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col md:flex-row gap-2">
+              <button onClick={handleSearch} className="bg-orange-500 hover:bg-orange-600 text-white font-bold text-lg px-8 py-3 rounded-lg md:rounded-r-lg transition">
+                SEARCH
+              </button>
+              {(searchDates.startDate || searchDates.endDate) && (
+                <button onClick={handleClearSearch} className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold text-sm px-4 py-3 rounded-lg transition">
+                  CLEAR
+                </button>
+              )}
+            </div>
           </div>
-        ))}
+        </div>
       </div>
 
-      {/* 3. Main Image Grid */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {loading ? (
-          <div className="flex justify-center items-center h-64">
-            <div className="animate-pulse flex space-x-4">
-              <div className="rounded-full bg-gray-200 h-12 w-12"></div>
-              <div className="flex-1 space-y-4 py-1">
-                <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                <div className="space-y-2">
-                  <div className="h-4 bg-gray-200 rounded"></div>
-                  <div className="h-4 bg-gray-200 rounded w-5/6"></div>
-                </div>
+      {/* Main Content Area */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col lg:flex-row gap-6">
+        
+        <div className="w-full lg:w-3/4 space-y-6 mx-auto">
+          
+          {/* Custom Booking Mode */}
+          <div className="flex flex-col md:flex-row bg-gradient-to-r from-blue-50 to-indigo-100 rounded-xl border border-blue-200 shadow-md hover:shadow-lg transition-all overflow-hidden cursor-pointer transform hover:-translate-y-1" onClick={() => navigate('/book/custom')}>
+            <div className="md:w-1/3 bg-blue-600 flex flex-col items-center justify-center text-white p-6">
+              <Layers size={48} className="mb-2 opacity-80" />
+              <span className="text-xl font-extrabold text-center">Custom Booking</span>
+            </div>
+            <div className="md:w-2/3 p-6 flex flex-col justify-center">
+              <h2 className="text-2xl font-bold text-gray-900">Build Your Own Booking</h2>
+              <p className="text-gray-600 mt-2 text-sm leading-relaxed">Don't want a pre-made package? Mix and match individual Halls, Lawns, Rooms, and specific catering items here.</p>
+              <div className="mt-4">
+                <button className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-6 py-2 rounded-full transition shadow-sm">Start Customizing</button>
               </div>
             </div>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 gap-y-10">
-            {facilities.map((facility, index) => (
-              <div 
-                key={facility.id} 
-                onClick={() => navigate(`/book/${facility.id}`)}
-                className="group cursor-pointer flex flex-col gap-3"
-              >
-                {/* Image Container with aspect-square */}
-                <div className="aspect-square w-full relative overflow-hidden rounded-xl bg-gray-200">
-                  <img 
-                    src={getPlaceholderImage(facility.facilityType, index)} 
-                    alt={facility.name}
-                    className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500"
-                  />
-                  {/* Heart Icon Toggle */}
-                  <button className="absolute top-3 right-3 text-white hover:scale-110 active:scale-95 transition drop-shadow-md">
-                    <Heart size={24} className="fill-black/20 stroke-white stroke-[1.5]" />
-                  </button>
-                  {/* Small badge for facility type */}
-                  <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-md shadow-sm text-xs font-bold text-gray-800 uppercase tracking-wider">
-                    {facility.facilityType}
-                  </div>
-                </div>
 
-                {/* Info Text below image */}
-                <div>
-                  <div className="flex justify-between items-start">
-                    <h3 className="font-semibold text-gray-900 truncate pr-4">{facility.name}</h3>
-                    <div className="flex items-center gap-1 text-sm text-gray-800 shrink-0">
-                      <Star size={14} className="fill-gray-900" />
-                      <span>{4.5 + (index % 5) * 0.1}</span> {/* Mock rating */}
+          <h2 className="text-xl font-bold text-gray-800 pt-4 border-t flex justify-between items-center">
+            Standard Packages 
+            {searchDates.startDate && <span className="text-sm font-normal text-green-600 bg-green-50 px-3 py-1 rounded-full border border-green-200">Filtered by your dates</span>}
+          </h2>
+
+          {loading ? (
+             <div className="text-center p-10 text-gray-500">Loading facilities...</div>
+          ) : facilities.length === 0 ? (
+             <div className="text-center p-10 text-gray-500 font-medium text-lg border rounded-xl bg-white shadow-sm">No packages match your search criteria.</div>
+          ) : (
+            facilities.map((facility, index) => {
+              const isAvailable = facility.isAvailableForDates !== false;
+
+              return (
+                <div 
+                  key={facility.id} 
+                  className={`flex flex-col md:flex-row bg-white rounded-xl border shadow-sm transition overflow-hidden ${!isAvailable ? 'opacity-60 cursor-not-allowed grayscale-[0.5]' : 'hover:shadow-md cursor-pointer'}`}
+                  onClick={() => isAvailable ? navigate(`/book/${facility.id}`) : toast.error("This package is sold out for the selected dates.")}
+                >
+                  <div className="md:w-1/3 relative h-48 md:h-auto">
+                    <img src={getPlaceholderImage(facility.facilityType, index)} alt={facility.name} className="object-cover w-full h-full" />
+                    <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm text-white text-xs font-bold px-2 py-1 rounded">
+                      {facility.facilityType}
+                    </div>
+                    {/* SOLD OUT OVERLAY */}
+                    {!isAvailable && (
+                      <div className="absolute inset-0 bg-red-900/40 flex items-center justify-center">
+                        <div className="bg-red-600 text-white font-extrabold px-4 py-2 rounded shadow-lg transform -rotate-12 border-2 border-red-800 tracking-wider">
+                          SOLD OUT
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="md:w-2/3 p-4 flex flex-col justify-between">
+                    <div>
+                      <div className="flex justify-between items-start">
+                        <h2 className="text-xl font-bold text-gray-900">{facility.name}</h2>
+                      </div>
+                      <p className="text-gray-500 text-sm mt-2 line-clamp-2">{facility.description}</p>
+                      
+                      {facility.pricingDetails?.included_facilities && (
+                        <div className="flex flex-wrap gap-2 mt-4">
+                          {facility.pricingDetails.included_facilities.slice(0, 3).map((inc, i) => (
+                            <span key={i} className="flex items-center gap-1 text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded">
+                              <Check size={12} className="text-green-600"/> {inc}
+                            </span>
+                          ))}
+                          {facility.pricingDetails.included_facilities.length > 3 && (
+                            <span className="text-xs text-blue-600 font-semibold bg-blue-50 px-2 py-1 rounded">+{facility.pricingDetails.included_facilities.length - 3} more</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-4 flex justify-between items-end border-t pt-4">
+                      <div>
+                        {!isAvailable && <span className="flex items-center gap-1 text-red-600 text-xs font-bold bg-red-50 px-2 py-1 rounded border border-red-100"><AlertCircle size={14}/> Unavailable for selected dates</span>}
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-gray-500 mb-1">Price {facility.pricingType === 'HOURLY' ? 'per hour' : facility.pricingType === 'TIERED' ? 'per day' : 'per slot'}</p>
+                        <p className={`text-2xl font-extrabold ${!isAvailable ? 'text-gray-400 line-through' : 'text-gray-900'}`}>₹{parseInt(facility.baseRate).toLocaleString('en-IN')}</p>
+                      </div>
                     </div>
                   </div>
-                  <p className="text-gray-500 text-sm truncate">{facility.description}</p>
-                  
-                  <div className="mt-1 flex items-baseline gap-1">
-                    <span className="font-semibold text-gray-900">₹{parseInt(facility.baseRate).toLocaleString('en-IN')}</span> 
-                    <span className="text-gray-500 text-sm">
-                      {facility.pricingType === 'HOURLY' ? '/ hour' : facility.pricingType === 'TIERED' ? '/ day' : '/ slot'}
-                    </span>
-                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+              );
+            })
+          )}
+        </div>
       </main>
     </div>
   );

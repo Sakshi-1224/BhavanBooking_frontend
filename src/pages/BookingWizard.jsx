@@ -1,126 +1,245 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Star, Users, MapPin, CheckCircle, Info, Clock } from 'lucide-react';
+import { Star, Users, MapPin, Info, Clock, Plus, Minus, AlertTriangle, CheckCircle, Package } from 'lucide-react';
 import api from '../api/axios';
 import { toast } from 'react-toastify';
 import useAuthStore from '../store/useAuthStore';
 
-// Utility to format JS Date to 'YYYY-MM-DDThh:mm' for datetime-local inputs
+// Utility to handle timezone offsets for datetime-local inputs
 const toLocalISOString = (date) => {
-  const tzOffset = (new Date()).getTimezoneOffset() * 60000; // offset in milliseconds
+  const tzOffset = (new Date()).getTimezoneOffset() * 60000;
   return new Date(date.getTime() - tzOffset).toISOString().slice(0, 16);
-};
-
-// Placeholder Gallery Generator
-const getGalleryImages = (type) => {
-  const images = {
-    COMPLEX: [
-      'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&q=80&w=1200',
-      'https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?auto=format&fit=crop&q=80&w=800',
-      'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?auto=format&fit=crop&q=80&w=800',
-      'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&q=80&w=800',
-      'https://images.unsplash.com/photo-1431540015161-0bf868a2d407?auto=format&fit=crop&q=80&w=800'
-    ]
-  };
-  return images[type] || [
-    'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&q=80&w=1200',
-    'https://images.unsplash.com/photo-1598928506311-c55dd58315cb?auto=format&fit=crop&q=80&w=800',
-    'https://images.unsplash.com/photo-1505691938895-1758d7def51a?auto=format&fit=crop&q=80&w=800',
-    'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&q=80&w=800',
-    'https://images.unsplash.com/photo-1560185016-8c3f592ba9f5?auto=format&fit=crop&q=80&w=800'
-  ];
 };
 
 export default function BookingWizard() {
   const { facilityId } = useParams();
+  const isCustomMode = facilityId === 'custom';
+  
   const navigate = useNavigate();
   const { isAuthenticated } = useAuthStore();
 
   const [facility, setFacility] = useState(null);
+  const [extraItems, setExtraItems] = useState([]); 
+  const [selectedExtras, setSelectedExtras] = useState({}); 
   const [loading, setLoading] = useState(true);
   
   const [formData, setFormData] = useState({
     startTime: '',
     endTime: '',
     guestCount: 1,
-    eventType: 'Meeting'
+    eventType: 'Marriage'
   });
 
   const [availability, setAvailability] = useState(null);
+  const [partialAvailability, setPartialAvailability] = useState(null); 
   const [isChecking, setIsChecking] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // 1. Initial Load of Facilities
   useEffect(() => {
-    const fetchFacility = async () => {
+    const fetchFacilities = async () => {
       try {
         const response = await api.get('/facilities');
-        const found = response.data.data.find(f => f.id === facilityId);
-        if (found) setFacility(found);
-        else toast.error('Facility not found');
+        const facilities = response.data.data;
+        
+        if (isCustomMode) {
+          setFacility({
+            id: 'custom',
+            name: 'Build Your Custom Booking',
+            description: 'Select the specific facilities you need by ticking the boxes below.',
+            baseRate: 0,
+            pricingType: 'MIXED'
+          });
+          const customOptions = facilities.filter(f => f.facilityType !== 'PACKAGE' && f.facilityType !== 'COMPLEX');
+          setExtraItems(customOptions.map(item => ({ ...item, isAvailableForDates: true })));
+        
+        } else {
+          const found = facilities.find(f => f.id === facilityId);
+          if (found) setFacility(found);
+          else toast.error('Facility not found');
+          
+          let extras = [];
+          if (found?.name?.toLowerCase().includes('complete bhavan')) {
+             extras = facilities.filter(f => f.name.toLowerCase().includes('mini hall'));
+          }
+
+          setExtraItems(extras.map(item => ({ ...item, isAvailableForDates: true })));
+        }
       } catch (error) {
-        toast.error('Failed to load facility details');
+        toast.error('Failed to load details');
       } finally {
         setLoading(false);
       }
     };
-    fetchFacility();
-  }, [facilityId]);
+    fetchFacilities();
+  }, [facilityId, isCustomMode]);
 
-  // --- SMART DATE LOGIC ---
+  // 2. Dynamic Live Availability Check for Items
+  useEffect(() => {
+    const checkItemAvailability = async () => {
+      if (formData.startTime && formData.endTime) {
+        try {
+          const response = await api.get(`/facilities?startDate=${formData.startTime}&endDate=${formData.endTime}`);
+          const updatedFacilities = response.data.data;
+          
+          setExtraItems(prevItems => 
+            prevItems.map(item => {
+              const updatedItem = updatedFacilities.find(f => f.id === item.id);
+              return updatedItem ? { ...item, isAvailableForDates: updatedItem.isAvailableForDates } : item;
+            })
+          );
+
+          setSelectedExtras(prev => {
+            const newSelected = { ...prev };
+            let itemsRemoved = false;
+            for (const id in newSelected) {
+              const updatedItem = updatedFacilities.find(f => f.id === id);
+              if (updatedItem && updatedItem.isAvailableForDates === false) {
+                delete newSelected[id];
+                itemsRemoved = true;
+              }
+            }
+            if (itemsRemoved) toast.warn("Some selected items were removed because they are not available for these new dates.");
+            return newSelected;
+          });
+
+        } catch (error) {
+          console.error("Failed to check live availability", error);
+        }
+      } else {
+        setExtraItems(prevItems => prevItems.map(item => ({ ...item, isAvailableForDates: true })));
+      }
+    };
+
+    const timeoutId = setTimeout(() => {
+      checkItemAvailability();
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [formData.startTime, formData.endTime]);
+
+
+  // 3. SMART TIMING LOGIC
   useEffect(() => {
     if (!formData.startTime || !facility) return;
 
     const startDate = new Date(formData.startTime);
     let newEndDate = formData.endTime ? new Date(formData.endTime) : null;
 
-    // RULE 1: STRICT FIXED SLOTS (e.g., Exactly 6 Hours)
+    if (facility.name?.includes('Day Room')) {
+      const forcedStart = new Date(startDate);
+      forcedStart.setHours(10, 0, 0, 0); 
+      const forcedEnd = new Date(forcedStart);
+      forcedEnd.setDate(forcedEnd.getDate() + 1);
+      forcedEnd.setHours(8, 0, 0, 0); 
+
+      if (formData.startTime !== toLocalISOString(forcedStart) || formData.endTime !== toLocalISOString(forcedEnd)) {
+        setFormData(prev => ({ ...prev, startTime: toLocalISOString(forcedStart), endTime: toLocalISOString(forcedEnd) }));
+      }
+      return; 
+    }
+
     if (facility.pricingType === 'SLOT' && facility.pricingDetails?.duration_hours) {
       const durationMs = facility.pricingDetails.duration_hours * 60 * 60 * 1000;
       const exactEndDate = new Date(startDate.getTime() + durationMs);
-      setFormData(prev => ({ ...prev, endTime: toLocalISOString(exactEndDate) }));
-    } 
-    // RULE 2: HOURLY (Minimum Base Hours, e.g., 5 Hours)
-    else if (facility.pricingType === 'HOURLY' && facility.pricingDetails?.base_hours) {
-      const minDurationMs = facility.pricingDetails.base_hours * 60 * 60 * 1000;
-      const minEndDate = new Date(startDate.getTime() + minDurationMs);
-      
-      // If user hasn't set an end time, or set one that is too short, auto-adjust it
-      if (!newEndDate || newEndDate < minEndDate) {
-        setFormData(prev => ({ ...prev, endTime: toLocalISOString(minEndDate) }));
+      if (formData.endTime !== toLocalISOString(exactEndDate)) {
+        setFormData(prev => ({ ...prev, endTime: toLocalISOString(exactEndDate) }));
       }
-    } 
-    // RULE 3: DAILY OR DEFAULT (Tiered, Fixed)
-    else {
+      return; 
+    }
+
+    if (facility.name === 'Meeting Hall') {
+      const suggestedStart = new Date(startDate);
+      if (suggestedStart.getHours() < 18) {
+        suggestedStart.setHours(18, 0, 0, 0);
+        if (formData.startTime !== toLocalISOString(suggestedStart)) {
+           setFormData(prev => ({ ...prev, startTime: toLocalISOString(suggestedStart) }));
+        }
+      }
+      if (!newEndDate) {
+        const defaultEnd = new Date(suggestedStart);
+        defaultEnd.setHours(suggestedStart.getHours() + 5);
+        setFormData(prev => ({ ...prev, endTime: toLocalISOString(defaultEnd) }));
+      }
+      return;
+    }
+
+    if (!newEndDate || newEndDate <= startDate) {
       const nextDay = new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
-      if (!newEndDate || newEndDate <= startDate) {
-        setFormData(prev => ({ ...prev, endTime: toLocalISOString(nextDay) }));
-      }
+      setFormData(prev => ({ ...prev, endTime: toLocalISOString(nextDay) }));
     }
   }, [formData.startTime, facility]);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
-    if (['startTime', 'endTime'].includes(e.target.name)) {
-      setAvailability(null); // Reset quote when dates change
+    setAvailability(null);
+    setPartialAvailability(null);
+  };
+
+  // NEW: Checkbox Handler
+  const handleCheckboxChange = (id, isChecked) => {
+    setSelectedExtras(prev => {
+      if (isChecked) {
+        return { ...prev, [id]: 1 }; // Default quantity to 1 when checked
+      } else {
+        const { [id]: _, ...rest } = prev; // Remove item if unchecked
+        return rest;
+      }
+    });
+    setAvailability(null);
+    setPartialAvailability(null);
+  };
+
+  // Quantity Handler (Only used for items like Mattresses)
+  const handleQuantityChange = (id, delta) => {
+    setSelectedExtras(prev => {
+      const current = prev[id] || 1;
+      const next = Math.max(1, current + delta); // Prevent dropping below 1 via this button
+      return { ...prev, [id]: next };
+    });
+    setAvailability(null);
+    setPartialAvailability(null);
+  };
+
+  const buildPayload = (isBookingPartial = false) => {
+    const userSelectedCustoms = Object.entries(selectedExtras).map(([id, quantity]) => ({
+      facilityId: id,
+      quantity
+    }));
+
+    if (isCustomMode) return { ...formData, customFacilities: userSelectedCustoms };
+
+    if (isBookingPartial && partialAvailability) {
+      const remainingCustoms = partialAvailability.availableAlternatives.map(alt => ({
+        facilityId: alt.facilityId,
+        quantity: alt.quantity || 1
+      }));
+      return { ...formData, customFacilities: [...remainingCustoms, ...userSelectedCustoms] };
     }
+
+    return { facilityId, ...formData, customFacilities: userSelectedCustoms };
   };
 
   const handleCheckAvailability = async () => {
-    if (!formData.startTime || !formData.endTime) {
-      return toast.warn('Please select both start and end times.');
-    }
+    if (!formData.startTime || !formData.endTime) return toast.warn('Please select both start and end times.');
+    if (isCustomMode && Object.keys(selectedExtras).length === 0) return toast.warn('Please select at least one item for your custom booking.');
     
     setIsChecking(true);
+    setPartialAvailability(null);
     try {
-      const response = await api.post('/bookings/check-availability', {
-        facilityId,
-        startTime: formData.startTime,
-        endTime: formData.endTime
-      });
+      const response = await api.post('/bookings/check-availability', buildPayload(false));
+      const data = response.data.data;
       
-      setAvailability(response.data.data);
-      if (response.data.data.isAvailable) toast.success('Dates are available!');
-      else toast.error('Dates are currently booked.');
+      if (data.isAvailable) {
+        setAvailability(data);
+        toast.success('Dates are available!');
+      } else if (data.isPartiallyAvailable) {
+        setPartialAvailability(data);
+        toast.warn('Package is partially booked. Review remaining options.');
+      } else {
+        setAvailability(data);
+        toast.error(data.message || 'Dates are currently fully booked.');
+      }
     } catch (error) {
       toast.error(error.response?.data?.message || 'Error checking availability');
     } finally {
@@ -128,7 +247,7 @@ export default function BookingWizard() {
     }
   };
 
-  const handleBookNow = async () => {
+  const handleBookNow = async (isBookingPartial = false) => {
     if (!isAuthenticated) {
       toast.info('Please log in to complete your booking.');
       return navigate('/user/login');
@@ -136,9 +255,9 @@ export default function BookingWizard() {
 
     setIsSubmitting(true);
     try {
-      await api.post('/bookings', { facilityId, ...formData });
+      await api.post('/bookings', buildPayload(isBookingPartial));
       toast.success('Booking requested successfully!');
-      navigate('/dashboard'); 
+      navigate('/my-bookings'); 
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to submit booking');
     } finally {
@@ -146,160 +265,203 @@ export default function BookingWizard() {
     }
   };
 
-  if (loading) return <div className="p-20 text-center text-xl">Loading facility details...</div>;
-  if (!facility) return <div className="p-20 text-center text-xl">Facility not found.</div>;
+  if (loading || !facility) return <div className="p-20 text-center text-xl text-gray-500">Loading facility data...</div>;
 
-  const gallery = getGalleryImages(facility.facilityType);
-  
-  // Disable the end time input entirely if this facility is a strict fixed-hour slot
-  const isFixedSlot = facility.pricingType === 'SLOT' && facility.pricingDetails?.duration_hours;
+  const extrasTotal = Object.entries(selectedExtras).reduce((total, [id, quantity]) => {
+    const item = extraItems.find(i => i.id === id);
+    return total + (item ? parseInt(item.baseRate) * quantity : 0);
+  }, 0);
+
+  const liveTotal = isCustomMode ? extrasTotal : parseInt(facility.baseRate) + extrasTotal;
+
+  const isStrictSlot = facility.pricingType === 'SLOT' && facility.pricingDetails?.duration_hours;
+  const isDayRoom = facility.name?.includes('Day Room');
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Title & Header */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">{facility.name}</h1>
-        <div className="flex items-center gap-4 mt-2 text-sm text-gray-600 font-medium">
-          <span className="flex items-center gap-1"><Star size={16} className="fill-gray-900 text-gray-900"/> 4.8</span>
-          <span className="underline cursor-pointer"><MapPin size={16} className="inline mr-1"/> Raipur, Chhattisgarh</span>
-          <span className="bg-gray-200 px-2 py-1 rounded text-gray-800">{facility.facilityType}</span>
-        </div>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col md:flex-row gap-12">
+      
+      {/* Left Column: Info & Add-ons */}
+      <div className="md:w-2/3">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">{facility.name}</h1>
+        <p className="text-gray-600 leading-relaxed text-lg border-b pb-6 mb-6">{facility.description}</p>
+        
+        {extraItems.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">
+              {isCustomMode ? 'Select your facilities' : 'Add Extras to your booking'}
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {extraItems.map(item => {
+                const isMiniHall = item.name.toLowerCase().includes('mini hall');
+                const isSoldOut = item.isAvailableForDates === false;
+                const isSelected = !!selectedExtras[item.id];
+                
+                return (
+                  <div key={item.id} className={`border rounded-lg p-4 flex justify-between items-center transition shadow-sm ${isSoldOut ? 'bg-gray-100 opacity-60 cursor-not-allowed grayscale' : (isSelected ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-300' : 'bg-white hover:shadow-md hover:border-blue-200')}`}>
+                    
+                    {/* Checkbox and Label */}
+                    <div className="flex items-start gap-3">
+                      <input 
+                        type="checkbox" 
+                        id={`facility-${item.id}`}
+                        checked={isSelected}
+                        onChange={(e) => handleCheckboxChange(item.id, e.target.checked)}
+                        disabled={isSoldOut}
+                        className="w-5 h-5 mt-1 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer disabled:cursor-not-allowed"
+                      />
+                      <div>
+                        <label htmlFor={`facility-${item.id}`} className={`font-semibold cursor-pointer ${isSoldOut ? 'text-gray-500 line-through' : (isMiniHall ? 'text-orange-800' : 'text-gray-800')}`}>
+                          {item.name} {isMiniHall && !isSoldOut && <span className="text-[10px] uppercase font-bold bg-orange-200 text-orange-800 px-2 py-0.5 rounded ml-2">Premium Add-on</span>}
+                        </label>
+                        <p className="text-sm text-gray-500">₹{parseInt(item.baseRate).toLocaleString('en-IN')} {item.pricingType === 'HOURLY' ? '/ hr' : ''}</p>
+                        {isSoldOut && <p className="text-xs font-bold text-red-600 mt-1">Sold out for these dates</p>}
+                      </div>
+                    </div>
+                    
+                    {/* Quantity Selector ONLY for items that allow multiple (like Extra Mattress) */}
+                    {isSelected && item.pricingType === 'PER_ITEM' && (
+                      <div className="flex items-center gap-2 border rounded-md px-2 py-1 bg-white shadow-sm">
+                        <button onClick={() => handleQuantityChange(item.id, -1)} disabled={selectedExtras[item.id] <= 1} className="text-gray-500 hover:text-gray-800 disabled:opacity-30"><Minus size={14}/></button>
+                        <span className="font-bold w-4 text-center text-sm">{selectedExtras[item.id]}</span>
+                        <button onClick={() => handleQuantityChange(item.id, 1)} className="text-gray-500 hover:text-gray-800"><Plus size={14}/></button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {!isCustomMode && extraItems.length === 0 && (
+           <div className="p-4 bg-blue-50 text-blue-800 rounded-lg flex items-start gap-3">
+              <Package className="shrink-0 mt-1" />
+              <div>
+                <h3 className="font-bold">Standard Package</h3>
+                <p className="text-sm mt-1">This is a fixed package. The items included cannot be customized or removed.</p>
+              </div>
+           </div>
+        )}
       </div>
 
-      {/* Gallery Grid */}
-      <div className="grid grid-cols-4 grid-rows-2 gap-2 h-[60vh] rounded-xl overflow-hidden mb-10">
-        <img src={gallery[0]} alt="Main" className="col-span-2 row-span-2 w-full h-full object-cover" />
-        <img src={gallery[1]} alt="Sub 1" className="col-span-1 row-span-1 w-full h-full object-cover" />
-        <img src={gallery[2]} alt="Sub 2" className="col-span-1 row-span-1 w-full h-full object-cover" />
-        <img src={gallery[3]} alt="Sub 3" className="col-span-1 row-span-1 w-full h-full object-cover" />
-        <img src={gallery[4]} alt="Sub 4" className="col-span-1 row-span-1 w-full h-full object-cover" />
-      </div>
-
-      <div className="flex flex-col md:flex-row gap-12">
-        {/* Left Column: Rules & Info */}
-        <div className="md:w-2/3">
-          <div className="border-b pb-6 mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">About this space</h2>
-            <p className="text-gray-600 leading-relaxed text-lg">{facility.description}</p>
+      {/* Right Column: Booking Widget */}
+      <div className="md:w-1/3 relative">
+        <div className="sticky top-28 bg-white border rounded-xl shadow-xl p-6">
+          <div className="flex items-baseline gap-1 mb-6">
+            <span className="text-3xl font-bold text-gray-900">₹{liveTotal.toLocaleString('en-IN')}</span>
+            <span className="text-gray-500 text-sm ml-1">{isCustomMode ? 'custom total' : (extrasTotal > 0 ? 'base + extras' : 'base rate')}</span>
           </div>
-          
-          <div className="border-b pb-6 mb-6 space-y-4">
-            <div className="flex items-start gap-4">
-              <Users size={28} className="text-gray-700" />
-              <div>
-                <h3 className="font-semibold text-gray-900">Great for Gatherings</h3>
-                <p className="text-gray-500 text-sm">Accommodates {facility.maxCapacity || 'large groups'} comfortably.</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-4">
-              <Clock size={28} className="text-gray-700" />
-              <div>
-                <h3 className="font-semibold text-gray-900">Booking Rule</h3>
-                <p className="text-gray-500 text-sm">
-                  {isFixedSlot 
-                    ? `This package is strictly for a ${facility.pricingDetails.duration_hours}-hour block.` 
-                    : facility.pricingType === 'HOURLY' 
-                      ? `Minimum ${facility.pricingDetails?.base_hours || 1} hours required.` 
-                      : 'Standard daily booking rules apply.'}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        {/* Right Column: Sticky Booking Widget */}
-        <div className="md:w-1/3 relative">
-          <div className="sticky top-28 bg-white border rounded-xl shadow-xl p-6">
-            <div className="flex items-baseline gap-1 mb-6">
-              <span className="text-2xl font-bold text-gray-900">₹{parseInt(facility.baseRate).toLocaleString('en-IN')}</span>
-              <span className="text-gray-500 text-sm">
-                {facility.pricingType === 'HOURLY' ? '/ hour base' : ' base rate'}
-              </span>
+          {!isCustomMode && (isStrictSlot || isDayRoom || facility.name === 'Meeting Hall') && (
+            <div className="mb-4 p-3 bg-indigo-50 border border-indigo-100 rounded-md flex items-start gap-2 text-indigo-800 text-xs">
+              <Clock size={16} className="shrink-0 mt-0.5" />
+              <p>
+                <strong>Timing Rules:</strong><br/>
+                {isDayRoom && "Check-in is locked to 10:00 AM, Check-out is locked to 8:00 AM the next day."}
+                {isStrictSlot && `This package is strictly valid for exactly ${facility.pricingDetails.duration_hours} hours.`}
+                {facility.name === 'Meeting Hall' && "Available 6:00 PM – 11:00 PM. Extra hours will incur additional charges."}
+              </p>
             </div>
+          )}
 
-            <div className="border rounded-lg overflow-hidden mb-4">
-              <div className="flex border-b">
-                <div className="w-1/2 p-3 border-r">
-                  <label className="block text-xs font-bold text-gray-700 uppercase">Check-in</label>
-                  <input 
-                    type="datetime-local" 
-                    name="startTime" 
-                    value={formData.startTime} 
-                    onChange={handleChange} 
-                    min={toLocalISOString(new Date())} // Prevent past dates
-                    className="w-full text-sm outline-none mt-1 text-gray-700" 
-                  />
-                </div>
-                <div className={`w-1/2 p-3 ${isFixedSlot ? 'bg-gray-50 cursor-not-allowed' : ''}`}>
-                  <label className="block text-xs font-bold text-gray-700 uppercase">Check-out</label>
+          <div className="border rounded-lg overflow-hidden mb-4">
+            <div className="flex border-b">
+              <div className={`w-1/2 p-3 border-r ${isDayRoom ? 'bg-gray-100' : ''}`}>
+                <label className="block text-xs font-bold text-gray-700 uppercase">Check-in</label>
+                <input 
+                  type={isDayRoom ? "date" : "datetime-local"} 
+                  name="startTime" 
+                  value={isDayRoom ? formData.startTime.split('T')[0] : formData.startTime} 
+                  onChange={handleChange} 
+                  min={new Date().toISOString().split('T')[0]} 
+                  className="w-full text-sm outline-none mt-1 bg-transparent" 
+                />
+                {isDayRoom && <div className="text-xs text-indigo-600 font-bold mt-1">@ 10:00 AM</div>}
+              </div>
+              <div className={`w-1/2 p-3 ${(isStrictSlot || isDayRoom) ? 'bg-gray-100 cursor-not-allowed' : ''}`}>
+                <label className="block text-xs font-bold text-gray-700 uppercase">Check-out</label>
+                {isDayRoom ? (
+                  <>
+                    <input type="date" disabled value={formData.endTime.split('T')[0]} className="w-full text-sm outline-none mt-1 bg-transparent cursor-not-allowed text-gray-500" />
+                    <div className="text-xs text-indigo-600 font-bold mt-1">@ 08:00 AM</div>
+                  </>
+                ) : (
                   <input 
                     type="datetime-local" 
                     name="endTime" 
                     value={formData.endTime} 
                     onChange={handleChange} 
-                    disabled={isFixedSlot} // Locks the field if it's a 6-hour package
-                    className={`w-full text-sm outline-none mt-1 text-gray-700 ${isFixedSlot ? 'bg-gray-50 cursor-not-allowed' : ''}`} 
+                    disabled={isStrictSlot} 
+                    className={`w-full text-sm outline-none mt-1 bg-transparent ${isStrictSlot ? 'cursor-not-allowed text-gray-500' : ''}`} 
                   />
-                </div>
-              </div>
-              
-              <div className="p-3 border-b">
-                <label className="block text-xs font-bold text-gray-700 uppercase">Guests</label>
-                <input type="number" min="1" name="guestCount" value={formData.guestCount} onChange={handleChange} className="w-full text-sm outline-none mt-1 text-gray-700" />
-              </div>
-              <div className="p-3">
-                <label className="block text-xs font-bold text-gray-700 uppercase">Event Type</label>
-                <select name="eventType" value={formData.eventType} onChange={handleChange} className="w-full text-sm outline-none mt-1 text-gray-700 bg-transparent">
-                  <option value="Marriage">Marriage</option>
-                  <option value="Meeting">Meeting / Conference</option>
-                  <option value="Cultural Event">Cultural Event</option>
-                  <option value="Other">Other</option>
-                </select>
+                )}
               </div>
             </div>
+            <div className="p-3 border-b">
+              <label className="block text-xs font-bold text-gray-700 uppercase">Guests</label>
+              <input type="number" min="1" name="guestCount" value={formData.guestCount} onChange={handleChange} className="w-full text-sm outline-none mt-1" />
+            </div>
+            <div className="p-3">
+              <label className="block text-xs font-bold text-gray-700 uppercase">Event Type</label>
+              <select name="eventType" value={formData.eventType} onChange={handleChange} className="w-full text-sm outline-none mt-1 bg-transparent">
+                <option value="Marriage">Marriage</option>
+                <option value="Meeting">Meeting / Conference</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+          </div>
 
-            {/* Actions */}
-            {!availability?.isAvailable ? (
-              <button 
-                onClick={handleCheckAvailability} 
-                disabled={isChecking}
-                className="w-full py-3 rounded-lg text-white font-semibold bg-red-600 hover:bg-red-700 transition disabled:opacity-50"
-              >
+          {partialAvailability ? (
+            <div className="space-y-4">
+              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div className="flex gap-2 items-start mb-2">
+                  <AlertTriangle size={20} className="text-yellow-600 shrink-0" />
+                  <h3 className="font-bold text-yellow-800 text-sm">Partially Booked!</h3>
+                </div>
+                <p className="text-xs text-yellow-700 mb-3">{partialAvailability.message}</p>
+                <p className="text-xs text-red-800 font-semibold mb-1 border-t border-yellow-200 pt-2">Already Booked:</p>
+                <ul className="text-xs text-red-600 list-disc pl-4 mb-3">
+                  {partialAvailability.unavailableComponents?.map((item, i) => <li key={i}>{item}</li>)}
+                </ul>
+                <p className="text-xs text-green-800 font-semibold mb-1 border-t border-yellow-200 pt-2">What you get:</p>
+                <ul className="text-xs text-green-700 list-disc pl-4 mb-3">
+                  {partialAvailability.availableAlternatives?.map((item, i) => <li key={i}>{item.name}</li>)}
+                </ul>
+              </div>
+              <button onClick={() => handleBookNow(true)} disabled={isSubmitting} className="w-full py-3 rounded-lg text-white font-semibold bg-yellow-600 hover:bg-yellow-700 disabled:opacity-50">
+                {isSubmitting ? 'Submitting...' : 'Book Remaining Spaces'}
+              </button>
+            </div>
+          ) 
+          
+          : availability?.isAvailable ? (
+            <div className="space-y-4">
+              <div className="p-3 bg-green-50 text-green-700 rounded-md flex items-center gap-2 mb-2">
+                <CheckCircle size={18}/> <span className="font-semibold text-sm">Dates are available!</span>
+              </div>
+              <button onClick={() => handleBookNow(false)} disabled={isSubmitting} className="w-full py-3 rounded-lg text-white font-semibold bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-700 transition disabled:opacity-50">
+                {isSubmitting ? 'Submitting...' : 'Request to Book'}
+              </button>
+              <div className="pt-4 border-t space-y-2 text-sm text-gray-700">
+                <div className="flex justify-between font-bold"><span>Total Required</span><span>₹{availability.pricing?.estimatedTotal?.toLocaleString('en-IN')}</span></div>
+              </div>
+            </div>
+          ) 
+          
+          : (
+            <>
+              <button onClick={handleCheckAvailability} disabled={isChecking} className="w-full py-3 rounded-lg text-white font-semibold bg-red-600 hover:bg-red-700 disabled:opacity-50">
                 {isChecking ? 'Checking...' : 'Check Availability'}
               </button>
-            ) : (
-              <div className="space-y-4">
-                <button 
-                  onClick={handleBookNow} 
-                  disabled={isSubmitting}
-                  className="w-full py-3 rounded-lg text-white font-semibold bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700 transition disabled:opacity-50"
-                >
-                  {isSubmitting ? 'Submitting...' : 'Request to Book'}
-                </button>
-                <p className="text-center text-xs text-gray-500">You won't be charged yet</p>
-                
-                <div className="pt-4 border-t space-y-2 text-sm text-gray-700">
-                  <div className="flex justify-between">
-                    <span>Base Amount Calculated</span>
-                    <span>₹{availability.pricing.baseCalculatedAmount.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Security Deposit</span>
-                    <span>₹{parseInt(availability.pricing.securityDepositRequired).toLocaleString('en-IN')}</span>
-                  </div>
-                 
+              
+              {availability && !availability.isAvailable && !partialAvailability && (
+                <div className="mt-4 p-3 bg-red-50 text-red-700 text-sm rounded-md flex items-start gap-2">
+                  <Info size={16} className="mt-0.5 shrink-0" />
+                  <p>{availability.message || 'These dates are completely booked.'}</p>
                 </div>
-              </div>
-            )}
-            
-            {availability && !availability.isAvailable && (
-              <div className="mt-4 p-3 bg-red-50 text-red-700 text-sm rounded-md flex items-start gap-2">
-                <Info size={16} className="mt-0.5 shrink-0" />
-                <p>{availability.message}</p>
-              </div>
-            )}
-            
-          </div>
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>
