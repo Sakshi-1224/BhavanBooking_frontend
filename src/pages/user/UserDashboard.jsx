@@ -248,7 +248,13 @@ export default function UserDashboard() {
                     );
                   })()}
                 </div>
-
+                
+{booking.status === 'REJECTED' && (
+  <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 p-3 rounded-md mt-4">
+    <AlertCircle size={16} className="shrink-0" />
+    <p>This booking request was rejected by management because the facility is unavailable. Please try different dates.</p>
+  </div>
+)}
                 {/* Call to Action Buttons based on Status */}
                 {booking.status === 'PENDING_ADVANCE_PAYMENT' && (
                   <button 

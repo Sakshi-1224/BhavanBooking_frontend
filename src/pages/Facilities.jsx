@@ -207,7 +207,7 @@ export default function Facilities() {
                     {!isAvailable && (
                       <div className="absolute inset-0 bg-red-900/40 flex items-center justify-center">
                         <div className="bg-red-600 text-white font-extrabold px-4 py-2 rounded shadow-lg transform -rotate-12 border-2 border-red-800 tracking-wider">
-                          SOLD OUT
+                          BOOKED
                         </div>
                       </div>
                     )}
