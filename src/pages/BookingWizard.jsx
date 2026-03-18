@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Star, Users, MapPin, Info, Clock, Plus, Minus, AlertTriangle, CheckCircle, Package, Calendar } from 'lucide-react';
+import { Info, Clock, Plus, Minus, AlertTriangle, CheckCircle, Package, Calendar } from 'lucide-react';
 import api from '../api/axios';
 import { toast } from 'react-toastify';
 import useAuthStore from '../store/useAuthStore';
 
-// Utility to handle timezone offsets for datetime-local strings
+// Utility to handle timezone offsets for datetime-local strings sent to backend
 const toLocalISOString = (date) => {
   const tzOffset = (new Date()).getTimezoneOffset() * 60000;
   return new Date(date.getTime() - tzOffset).toISOString().slice(0, 16);
@@ -24,8 +24,9 @@ export default function BookingWizard() {
   const [loading, setLoading] = useState(true);
   
   // DYNAMIC TIMING STATE
-  const [bookingDate, setBookingDate] = useState('');
-  const [bookingOption, setBookingOption] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [bookingOption, setBookingOption] = useState(''); // Used for Slots/Tiered
 
   const [formData, setFormData] = useState({
     startTime: '',
@@ -50,7 +51,7 @@ export default function BookingWizard() {
           setFacility({
             id: 'custom',
             name: 'Build Your Custom Booking',
-            description: 'Select the specific facilities you need. Timings are fixed as per management rules.',
+            description: 'Select the specific facilities you need. Timings are fixed automatically as per management rules.',
             baseRate: 0,
             pricingType: 'MIXED'
           });
@@ -78,89 +79,115 @@ export default function BookingWizard() {
     fetchFacilities();
   }, [facilityId, isCustomMode]);
 
-  // 2. DYNAMIC TIMING LOGIC (Converts User Options into strict Start/End Times)
-  useEffect(() => {
-    if (!bookingDate || !facility) return;
+  // 2. LOGIC TO DETERMINE IF WE NEED A CHECK-OUT DATE PICKER
+  let isOnlyMiniHall = false;
+  let hasRoom = false;
 
-    const base = new Date(bookingDate);
-    let start = new Date(base);
-    let end = new Date(base);
+  if (isCustomMode) {
+    const selectedIds = Object.keys(selectedExtras);
+    if (selectedIds.length === 1) {
+       const item = extraItems.find(i => i.id === selectedIds[0]);
+       if (item?.name.toLowerCase().includes('mini hall')) {
+          isOnlyMiniHall = true;
+       }
+    }
+    selectedIds.forEach(id => {
+        const item = extraItems.find(i => i.id === id);
+        if (item?.facilityType === 'ROOM') hasRoom = true;
+    });
+  }
+
+  let needsEndDate = false;
+  if (isCustomMode) {
+     // Show Check-out Date for custom bookings UNLESS only Mini Hall is selected
+     needsEndDate = Object.keys(selectedExtras).length > 0 && !isOnlyMiniHall;
+  } else if (facility) {
+     // Show Check-out Date for FIXED packages (Full Day) and standalone Rooms
+     if (facility.pricingType === 'FIXED' || facility.facilityType === 'ROOM') {
+        needsEndDate = true;
+     }
+  }
+
+  // 3. DYNAMIC TIMING LOGIC (Converts Dates + Rules into strict Start/End Times)
+  useEffect(() => {
+    if (!startDate || !facility) return;
+
+    const start = new Date(startDate);
+    let end = new Date(startDate);
     let isValid = false;
 
-    if (isCustomMode) {
-      // CUSTOM BOOKING TIMING LOGIC
-      const selectedIds = Object.keys(selectedExtras);
+    if (needsEndDate) {
+      if (!endDate) {
+        setFormData(prev => ({ ...prev, startTime: '', endTime: '' }));
+        return; // Wait for user to pick the end date
+      }
+      end = new Date(endDate);
       
-      if (selectedIds.length === 0) {
-        start.setHours(8, 0); end.setHours(23, 0); isValid = true;
+      if (isCustomMode) {
+          // For Custom Modes with Rooms: Enforce 10AM to 8AM
+          if (hasRoom) {
+             start.setHours(10, 0);
+             end.setHours(8, 0); 
+          } else {
+             // For standard custom items: 8AM to 11PM
+             start.setHours(8, 0);
+             end.setHours(23, 0);
+          }
+          isValid = true;
       } else {
-        let hasRoom = false;
-        let hasMiniHall = false;
-        let hasStandard = false;
-
-        selectedIds.forEach(id => {
-          const item = extraItems.find(i => i.id === id);
-          if (item?.facilityType === 'ROOM') hasRoom = true;
-          else if (item?.name.toLowerCase().includes('mini hall')) hasMiniHall = true;
-          else if (item?.pricingType !== 'PER_ITEM') hasStandard = true;
-        });
-
-        // Calculate overarching time boundaries based on what is selected
-        if (hasRoom) {
-          start.setHours(10, 0); // 10 AM Check-in
-          end.setDate(end.getDate() + 1);
-          end.setHours(8, 0); // 8 AM Check-out Next Day
-        } else if (hasStandard) {
-          start.setHours(8, 0); // 8 AM
-          end.setHours(23, 0); // 11 PM
-        } else if (hasMiniHall) {
-          start.setHours(18, 0); // 6 PM
-          end.setHours(23, 0); // 11 PM
-        } else {
-          start.setHours(8, 0);
-          end.setHours(23, 0);
-        }
-        isValid = true;
+          // For standalone packages
+          if (facility.facilityType === 'ROOM') {
+             start.setHours(10, 0);
+             end.setHours(8, 0);
+          } else {
+             // FIXED Packages (e.g. Lawn + Kitchen, Full Day Halls)
+             start.setHours(8, 0);
+             end.setHours(23, 0);
+          }
+          isValid = true;
       }
     } else {
-      // STANDARD PACKAGE TIMING LOGIC
-      if (facility.pricingType === 'TIERED') {
-        start.setHours(10, 0, 0, 0); 
-        if (bookingOption === '1_day') { end.setDate(end.getDate() + 1); isValid = true; }
-        else if (bookingOption === '2_days') { end.setDate(end.getDate() + 2); isValid = true; }
-        else if (bookingOption === '3_days') { end.setDate(end.getDate() + 3); isValid = true; }
-        end.setHours(10, 0, 0, 0); 
-      } 
-      else if (facility.pricingType === 'SLOT' && facility.pricingDetails?.half_day) {
-        if (bookingOption === 'morning') { start.setHours(8, 0); end.setHours(16, 0); isValid = true; }
-        else if (bookingOption === 'evening') { start.setHours(16, 0); end.setHours(23, 0); isValid = true; }
-        else if (bookingOption === 'full') { start.setHours(8, 0); end.setHours(23, 0); isValid = true; }
-      }
-      else if (facility.pricingType === 'SLOT' && facility.pricingDetails?.duration_hours) {
-        const dur = facility.pricingDetails.duration_hours;
-        if (bookingOption === 'morning') { start.setHours(10, 0); end.setHours(10 + dur, 0); isValid = true; }
-        else if (bookingOption === 'evening') { start.setHours(17, 0); end.setHours(17 + dur, 0); isValid = true; }
-      }
-      else if (facility.pricingType === 'HOURLY') {
-        start.setHours(18, 0); end.setHours(23, 0); isValid = true;
-      }
-      else if (facility.facilityType === 'ROOM') {
-        start.setHours(10, 0); end.setDate(end.getDate() + 1); end.setHours(8, 0); isValid = true;
-      }
-      else {
-        start.setHours(8, 0); end.setHours(23, 0); isValid = true;
+      // SINGLE EVENT DATE LOGIC
+      if (isCustomMode && isOnlyMiniHall) {
+          start.setHours(18, 0);
+          end.setHours(23, 0);
+          isValid = true;
+      } else if (!isCustomMode) {
+          if (facility.pricingType === 'TIERED') {
+            if (bookingOption === '1_day') { start.setHours(10, 0); end.setDate(end.getDate() + 1); end.setHours(10, 0); isValid = true; }
+            else if (bookingOption === '2_days') { start.setHours(10, 0); end.setDate(end.getDate() + 2); end.setHours(10, 0); isValid = true; }
+            else if (bookingOption === '3_days') { start.setHours(10, 0); end.setDate(end.getDate() + 3); end.setHours(10, 0); isValid = true; }
+          } 
+          else if (facility.pricingType === 'SLOT' && facility.pricingDetails?.half_day) {
+            if (bookingOption === 'morning') { start.setHours(8, 0); end.setHours(16, 0); isValid = true; }
+            else if (bookingOption === 'evening') { start.setHours(16, 0); end.setHours(23, 0); isValid = true; }
+            else if (bookingOption === 'full') { start.setHours(8, 0); end.setHours(23, 0); isValid = true; }
+          }
+          else if (facility.pricingType === 'SLOT' && facility.pricingDetails?.duration_hours) {
+            const dur = facility.pricingDetails.duration_hours;
+            if (bookingOption === 'morning') { start.setHours(10, 0); end.setHours(10 + dur, 0); isValid = true; }
+            else if (bookingOption === 'evening') { start.setHours(17, 0); end.setHours(17 + dur, 0); isValid = true; }
+          }
+          else if (facility.pricingType === 'HOURLY') {
+            start.setHours(18, 0); end.setHours(23, 0); isValid = true;
+          }
       }
     }
 
     if (isValid) {
+      if (end <= start) {
+         toast.error("Check-out must be after check-in. (Rooms must span at least 1 night)");
+         setFormData(prev => ({ ...prev, startTime: '', endTime: '' }));
+         return;
+      }
       setFormData(prev => ({ ...prev, startTime: toLocalISOString(start), endTime: toLocalISOString(end) }));
     } else {
       setFormData(prev => ({ ...prev, startTime: '', endTime: '' }));
     }
 
-  }, [bookingDate, bookingOption, facility, isCustomMode, selectedExtras, extraItems]);
+  }, [startDate, endDate, bookingOption, facility, isCustomMode, needsEndDate, hasRoom, isOnlyMiniHall]);
 
-  // 3. Dynamic Live Availability Check
+  // 4. Dynamic Live Availability Check 
   useEffect(() => {
     const checkItemAvailability = async () => {
       if (formData.startTime && formData.endTime) {
@@ -185,7 +212,7 @@ export default function BookingWizard() {
                 itemsRemoved = true;
               }
             }
-            if (itemsRemoved) toast.warn("Some selected items were removed because they are not available for these dates.");
+            if (itemsRemoved) toast.warn("Some selected items were removed because they are not available for these new dates.");
             return newSelected;
           });
         } catch (error) {
@@ -317,7 +344,7 @@ export default function BookingWizard() {
                 const isSoldOut = item.isAvailableForDates === false;
                 const isSelected = !!selectedExtras[item.id];
                 
-                // Determine Fixed Timing Text to display to the user
+                // Determine Fixed Timing Text to display to the user below the item
                 let timingText = "08:00 AM - 11:00 PM (Full Day)";
                 if (item.facilityType === 'ROOM') timingText = "10:00 AM - 08:00 AM (Next Day)";
                 else if (isMiniHall) timingText = "06:00 PM - 11:00 PM (₹3000/extra hr)";
@@ -385,29 +412,55 @@ export default function BookingWizard() {
 
           <div className="border rounded-lg overflow-hidden mb-4 bg-gray-50">
             
-            {/* The Unified Date Picker (No more datetime-local inputs) */}
-            <div className="p-3 border-b bg-white">
-              <label className="block text-xs font-bold text-gray-700 uppercase flex items-center gap-1">
-                <Calendar size={14} /> Event Date
-              </label>
-              <input 
-                type="date" value={bookingDate} 
-                onChange={(e) => { setBookingDate(e.target.value); setAvailability(null); setPartialAvailability(null); }} 
-                min={new Date().toISOString().split('T')[0]} 
-                className="w-full text-sm outline-none mt-2 bg-transparent cursor-pointer" 
-              />
-            </div>
+            {/* The Unified Date Picker */}
+            {needsEndDate ? (
+              <div className="flex border-b bg-white">
+                <div className="w-1/2 p-3 border-r">
+                  <label className="block text-xs font-bold text-gray-700 uppercase flex items-center gap-1">
+                    <Calendar size={14} /> Check-in Date
+                  </label>
+                  <input 
+                    type="date" value={startDate} 
+                    onChange={(e) => { setStartDate(e.target.value); setAvailability(null); setPartialAvailability(null); }} 
+                    min={new Date().toISOString().split('T')[0]} 
+                    className="w-full text-sm outline-none mt-2 bg-transparent cursor-pointer" 
+                  />
+                </div>
+                <div className="w-1/2 p-3">
+                  <label className="block text-xs font-bold text-gray-700 uppercase flex items-center gap-1">
+                    <Calendar size={14} /> Check-out Date
+                  </label>
+                  <input 
+                    type="date" value={endDate} 
+                    onChange={(e) => { setEndDate(e.target.value); setAvailability(null); setPartialAvailability(null); }} 
+                    min={startDate || new Date().toISOString().split('T')[0]} 
+                    className="w-full text-sm outline-none mt-2 bg-transparent cursor-pointer" 
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 border-b bg-white">
+                <label className="block text-xs font-bold text-gray-700 uppercase flex items-center gap-1">
+                  <Calendar size={14} /> Event Date
+                </label>
+                <input 
+                  type="date" value={startDate} 
+                  onChange={(e) => { setStartDate(e.target.value); setAvailability(null); setPartialAvailability(null); }} 
+                  min={new Date().toISOString().split('T')[0]} 
+                  className="w-full text-sm outline-none mt-2 bg-transparent cursor-pointer" 
+                />
+              </div>
+            )}
 
-            {/* --- CUSTOM MODE UI --- */}
+            {/* --- TIMING INFO & SELECTORS --- */}
             {isCustomMode ? (
               <div className="p-3 border-b bg-indigo-50 text-indigo-800 text-xs">
                 <Clock size={14} className="inline mr-1 mb-0.5" />
-                <strong>Timings are strictly fixed based on your selected items.</strong> 
+                <strong>Timing is locked based on selected items.</strong><br/>
+                {hasRoom ? "10:00 AM to 08:00 AM (Next Day)" : isOnlyMiniHall ? "06:00 PM to 11:00 PM" : "08:00 AM to 11:00 PM"}
               </div>
             ) : (
-              /* --- STANDARD PACKAGE UI --- */
               <>
-                {/* Duration/Slot Selector based on Pricing Type */}
                 {facility.pricingType === 'TIERED' && (
                   <div className="p-3 border-b bg-white">
                     <label className="block text-xs font-bold text-gray-700 uppercase mb-2">Duration</label>
@@ -443,14 +496,13 @@ export default function BookingWizard() {
                   </div>
                 )}
 
-                {/* Show read-only description for Fixed / Hourly / Room */}
                 {(facility.pricingType === 'FIXED' || facility.pricingType === 'HOURLY' || facility.facilityType === 'ROOM') && (
                   <div className="p-3 border-b bg-indigo-50 text-indigo-800 text-xs">
                     <Clock size={14} className="inline mr-1 mb-0.5" />
                     <strong>Timing: </strong> 
                     {facility.facilityType === 'ROOM' ? "10:00 AM - 08:00 AM (Next Day)" : 
                      facility.pricingType === 'HOURLY' ? "06:00 PM - 11:00 PM (Evening Slot)" : 
-                     "08:00 AM - 11:00 PM (Full Day)"}
+                     "08:00 AM - 11:00 PM"}
                   </div>
                 )}
               </>
@@ -513,20 +565,8 @@ export default function BookingWizard() {
               <button onClick={() => handleBookNow(false)} disabled={isSubmitting} className="w-full py-3 rounded-lg text-white font-semibold bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-700 transition disabled:opacity-50">
                 {isSubmitting ? 'Submitting...' : 'Request to Book'}
               </button>
-            {/* --- NEW DETAILED PRICING BREAKDOWN --- */}
               <div className="pt-4 border-t space-y-2 text-sm text-gray-700">
-                <div className="flex justify-between">
-                  <span>Base Booking Amount</span>
-                  <span>₹{availability.pricing?.baseCalculatedAmount?.toLocaleString('en-IN')}</span>
-                </div>
-                <div className="flex justify-between text-orange-600">
-                  <span>Security Deposit (Refundable)</span>
-                  <span>₹{availability.pricing?.securityDepositRequired?.toLocaleString('en-IN')}</span>
-                </div>
-                <div className="flex justify-between font-bold text-lg border-t pt-2 mt-2">
-                  <span>Total Estimated Cost</span>
-                  <span>₹{availability.pricing?.estimatedTotal?.toLocaleString('en-IN')}</span>
-                </div>
+                <div className="flex justify-between font-bold"><span>Total Required</span><span>₹{availability.pricing?.estimatedTotal?.toLocaleString('en-IN')}</span></div>
               </div>
             </div>
           ) 
