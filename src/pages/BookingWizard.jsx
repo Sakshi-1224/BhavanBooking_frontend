@@ -129,9 +129,9 @@ export default function BookingWizard() {
              start.setHours(10, 0);
              end.setHours(8, 0); 
           } else {
-             // For standard custom items: 8AM to 11PM
+             // For standard custom items: 8AM to 8PM
              start.setHours(8, 0);
-             end.setHours(23, 0);
+             end.setHours(8, 0);
           }
           isValid = true;
       } else {
@@ -142,7 +142,7 @@ export default function BookingWizard() {
           } else {
              // FIXED Packages (e.g. Lawn + Kitchen, Full Day Halls)
              start.setHours(8, 0);
-             end.setHours(23, 0);
+             end.setHours(8, 0);
           }
           isValid = true;
       }
@@ -318,13 +318,6 @@ export default function BookingWizard() {
 
   if (loading || !facility) return <div className="p-20 text-center text-xl text-gray-500">Loading facility data...</div>;
 
-  const extrasTotal = Object.entries(selectedExtras).reduce((total, [id, quantity]) => {
-    const item = extraItems.find(i => i.id === id);
-    return total + (item ? parseInt(item.baseRate) * quantity : 0);
-  }, 0);
-
-  const liveTotal = isCustomMode ? extrasTotal : parseInt(facility.baseRate) + extrasTotal;
-
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col md:flex-row gap-12">
       
@@ -373,7 +366,7 @@ export default function BookingWizard() {
                           <Clock size={12} /> {timingText}
                         </p>
 
-                        {isSoldOut && <p className="text-xs font-bold text-red-600 mt-1">Sold out for these dates</p>}
+                        {isSoldOut && <p className="text-xs font-bold text-red-600 mt-1">Booked for these dates</p>}
                       </div>
                     </div>
                     
@@ -405,13 +398,38 @@ export default function BookingWizard() {
       {/* Right Column: Booking Widget */}
       <div className="md:w-1/3 relative">
         <div className="sticky top-28 bg-white border rounded-xl shadow-xl p-6">
-          <div className="flex items-baseline gap-1 mb-6">
-            <span className="text-3xl font-bold text-gray-900">₹{liveTotal.toLocaleString('en-IN')}</span>
-            <span className="text-gray-500 text-sm ml-1">{isCustomMode ? 'custom total' : (extrasTotal > 0 ? 'base + extras' : 'base rate')}</span>
-          </div>
-
+          <h3 className="text-xl font-bold mb-4 border-b pb-2">Price Summary</h3>
+          
+          {/* STRICTLY RELY ON BACKEND PRICING */}
+          {availability?.pricing ? (
+            <div className="flex flex-col mb-6 bg-gray-50 p-4 rounded-lg border">
+              <div className="flex justify-between items-center text-gray-600 mb-2">
+                <span className="text-sm">Calculated Base Amount:</span>
+                <span className="font-semibold">₹{Number(availability.pricing.baseCalculatedAmount).toLocaleString('en-IN')}</span>
+              </div>
+              <div className="flex justify-between items-center text-gray-600 mb-3 border-b border-gray-200 pb-3">
+                <span className="text-sm">Security Deposit (Refundable):</span>
+                <span className="font-semibold">₹{Number(availability.pricing.securityDepositRequired).toLocaleString('en-IN')}</span>
+              </div>
+              <div className="flex justify-between items-baseline gap-1 mt-1">
+                <span className="text-gray-800 font-bold">Total Required:</span>
+                <span className="text-3xl font-extrabold text-blue-700">₹{Number(availability.pricing.estimatedTotal).toLocaleString('en-IN')}</span>
+              </div>
+             
+            </div>
+          ) : (
+            <div className="flex flex-col mb-6 bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+               <div className="flex justify-between items-center text-gray-600 mb-2">
+                  <span className="text-sm">Starting from:</span>
+                  <span className="font-semibold">₹{facility?.baseRate ? parseInt(facility.baseRate).toLocaleString('en-IN') : '0'}/day</span>
+                </div>
+              <p className="text-sm text-yellow-800 mt-2 text-center">
+                Please select your dates and click <strong>"Check Availability"</strong> to see the exact pricing based on your selections.
+              </p>
+            </div>
+          )}
+          
           <div className="border rounded-lg overflow-hidden mb-4 bg-gray-50">
-            
             {/* The Unified Date Picker */}
             {needsEndDate ? (
               <div className="flex border-b bg-white">
@@ -502,7 +520,7 @@ export default function BookingWizard() {
                     <strong>Timing: </strong> 
                     {facility.facilityType === 'ROOM' ? "10:00 AM - 08:00 AM (Next Day)" : 
                      facility.pricingType === 'HOURLY' ? "06:00 PM - 11:00 PM (Evening Slot)" : 
-                     "08:00 AM - 11:00 PM"}
+                     "08:00 AM – 08:00 AM (Next Day)"}
                   </div>
                 )}
               </>
@@ -565,8 +583,13 @@ export default function BookingWizard() {
               <button onClick={() => handleBookNow(false)} disabled={isSubmitting} className="w-full py-3 rounded-lg text-white font-semibold bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-700 transition disabled:opacity-50">
                 {isSubmitting ? 'Submitting...' : 'Request to Book'}
               </button>
-              <div className="pt-4 border-t space-y-2 text-sm text-gray-700">
-                <div className="flex justify-between font-bold"><span>Total Required</span><span>₹{availability.pricing?.estimatedTotal?.toLocaleString('en-IN')}</span></div>
+            <div className="pt-4 border-t space-y-2 text-sm text-gray-700">
+                <div className="flex justify-between font-bold">
+                  <span>Total Required (Inc. Deposit)</span>
+                  <span className="text-lg">
+                    ₹{availability?.pricing?.estimatedTotal ? Number(availability.pricing.estimatedTotal).toLocaleString('en-IN') : "0"}
+                  </span>
+                </div>
               </div>
             </div>
           ) 

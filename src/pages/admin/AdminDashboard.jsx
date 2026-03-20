@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import useAuthStore from '../../store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
 import CreateClerk from './CreateClerk';
-
+import InvoicePrintView from '../../components/InvoicePrintView';
 const formatDate = (dateString) => {
   if (!dateString) return 'N/A';
   const options = { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
@@ -13,6 +13,7 @@ const formatDate = (dateString) => {
 };
 
 export default function AdminDashboard() {
+  const [printModal, setPrintModal] = useState(null); // holds { invoice, booking }
   const [activeTab, setActiveTab] = useState('PENDING_ADMIN_APPROVAL');
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -100,7 +101,7 @@ export default function AdminDashboard() {
     try {
       // Fetch the draft invoice created by the clerk
       const response = await api.get(`/billing/${booking.id}/invoice`);
-      const invoice = response.data.data;
+      const invoice = response.data.data.invoice;
       
       if (invoice.approvalStatus !== 'PENDING_ADMIN_APPROVAL') {
         return toast.info(`This invoice is currently: ${invoice.approvalStatus}`);
@@ -121,7 +122,7 @@ export default function AdminDashboard() {
 
     setIsSubmitting(true);
     try {
-      const payload = { status, adminRemarks: invoiceRemarks };
+      const payload = { approvalStatus: status, adminRemarks: invoiceRemarks };
       const response = await api.patch(`/billing/invoice/${invoiceModal.invoice.id}/approve`, payload);
       
       toast.success(response.data.message || `Invoice ${status.toLowerCase()} successfully.`);
@@ -154,6 +155,8 @@ export default function AdminDashboard() {
 
   const filteredBookings = bookings.filter((b) => {
     if (activeTab === 'ALL') return true;
+    // Allow CHECKED_OUT bookings to appear under the Active tab so Admins can print bills!
+    if (activeTab === 'CHECKED_IN') return b.status === 'CHECKED_IN' || b.status === 'CHECKED_OUT';
     return b.status === activeTab;
   });
 
@@ -223,6 +226,20 @@ export default function AdminDashboard() {
                               {booking.status === 'CHECKED_IN' && (
                                 <button onClick={() => handleOpenInvoiceModal(booking)} className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1.5 rounded text-xs transition flex items-center gap-1">
                                   <FileText size={14}/> Review Check-Out
+                                </button>
+                              )}
+
+                              {/* NEW: View/Print Bill Button */}
+                              {booking.status === 'CHECKED_OUT' && (
+                                <button 
+                                  onClick={async () => {
+                                    try {
+                                      const response = await api.get(`/billing/${booking.id}/invoice`);
+                                      setPrintModal({ invoice: response.data.data.invoice, booking });
+                                    } catch(err) { toast.error("Invoice not found."); }
+                                  }} 
+                                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded text-xs transition flex items-center gap-1">
+                                  <FileText size={14}/> View Bill
                                 </button>
                               )}
                               
@@ -390,10 +407,20 @@ export default function AdminDashboard() {
                 >
                   {isSubmitting ? 'Processing...' : 'Approve Check-Out'}
                 </button>
+                {/* PRINTABLE BILL MODAL */}
+    
               </div>
             </div>
           </div>
+          
         </div>
+      )}
+            {printModal && (
+        <InvoicePrintView 
+          invoice={printModal.invoice} 
+          booking={printModal.booking} 
+          onClose={() => setPrintModal(null)} 
+        />
       )}
 
     </div>

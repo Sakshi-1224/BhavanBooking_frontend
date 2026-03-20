@@ -4,6 +4,8 @@ import api from '../../api/axios';
 import { toast } from 'react-toastify';
 import useAuthStore from '../../store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
+import InvoicePrintView from '../../components/InvoicePrintView';
+import { FileText } from 'lucide-react'; // Add FileText to your lucide-react imports
 
 const formatDate = (dateString) => {
   if (!dateString) return 'N/A';
@@ -12,6 +14,7 @@ const formatDate = (dateString) => {
 };
 
 export default function ClerkDashboard() {
+  const [printModal, setPrintModal] = useState(null);
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('PENDING_CLERK_REVIEW');
@@ -113,8 +116,13 @@ export default function ClerkDashboard() {
         toast.success('Check-in successful & Document uploaded to MinIO!');
         
       } else {
+        // 1. Create a valid future due date to pass the Joi min("now") validation
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + 7); // e.g., Set due date 7 days from today
         // Check-Out Logic: Works for both fresh drafts and resubmitting rejected drafts!
         const payload = {
+          bookingId: selectedBooking.id, // REQUIRED by Backend DTO
+          dueDate: dueDate.toISOString(), // REQUIRED by Backend DTO
           electricityUnitsConsumed: Number(formData.electricityUnitsConsumed || 0),
           cleaningCharges: Number(formData.cleaningCharges || 0),
           generatorCharges: Number(formData.generatorCharges || 0),
@@ -123,7 +131,7 @@ export default function ClerkDashboard() {
             : []
         };
         
-        await api.post(`/billing/${selectedBooking.id}/draft-invoice`, payload);
+        await api.post(`/billing/draft-invoice`, payload);
         toast.success('Draft invoice submitted! Sent to Admin for approval.');
       }
       
@@ -143,7 +151,7 @@ export default function ClerkDashboard() {
 
   const filteredBookings = bookings.filter((b) => {
     if (activeTab === 'ALL') return true;
-    if (activeTab === 'ACTIVE') return ['CONFIRMED', 'CHECKED_IN'].includes(b.status);
+   if (activeTab === 'ACTIVE') return ['CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT'].includes(b.status);
     return b.status === activeTab;
   });
 
@@ -257,6 +265,19 @@ export default function ClerkDashboard() {
                               <LogOutIcon size={14}/> Billing / Check-Out
                             </button>
                           )}
+                          {/* NEW: Clerk View Bill Button */}
+                          {booking.status === 'CHECKED_OUT' && (
+                            <button 
+                              onClick={async () => {
+                                try {
+                                  const response = await api.get(`/billing/${booking.id}/invoice`);
+                                  setPrintModal({ invoice: response.data.data.invoice, booking });
+                                } catch(err) { toast.error("Invoice not found."); }
+                              }} 
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1">
+                              <FileText size={14}/> View/Print Bill
+                            </button>
+                          )}
                         </td>
                       </tr>
                     )
@@ -348,7 +369,16 @@ export default function ClerkDashboard() {
               </form>
             )}
           </div>
+      
         </div>
+      )}
+          {/* PRINTABLE BILL MODAL */}
+      {printModal && (
+        <InvoicePrintView 
+          invoice={printModal.invoice} 
+          booking={printModal.booking} 
+          onClose={() => setPrintModal(null)} 
+        />
       )}
     </div>
   );
