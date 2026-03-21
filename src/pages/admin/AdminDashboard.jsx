@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle, Shield, LogOut, X, Eye, FileText, AlertTriangle } from 'lucide-react';
+import { CheckCircle, Shield, LogOut, X, Eye, FileText, AlertTriangle, Settings } from 'lucide-react';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
 import useAuthStore from '../../store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
 import CreateClerk from './CreateClerk';
 import InvoicePrintView from '../../components/InvoicePrintView';
+import AdminProfileModal from './AdminProfileModal'; // <-- NEW IMPORT
+
 const formatDate = (dateString) => {
   if (!dateString) return 'N/A';
   const options = { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
@@ -13,24 +15,24 @@ const formatDate = (dateString) => {
 };
 
 export default function AdminDashboard() {
-  const [printModal, setPrintModal] = useState(null); // holds { invoice, booking }
+  const [printModal, setPrintModal] = useState(null); 
   const [activeTab, setActiveTab] = useState('PENDING_ADMIN_APPROVAL');
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // Initial Booking Approval Modals & Forms
   const [approvingBooking, setApprovingBooking] = useState(null);
   const [advanceAmount, setAdvanceAmount] = useState('');
   const [totalAmount, setTotalAmount] = useState(''); 
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // Invoice / Checkout Approval Modal
-  const [invoiceModal, setInvoiceModal] = useState(null); // holds { booking, invoice }
+  const [invoiceModal, setInvoiceModal] = useState(null);
   const [invoiceRemarks, setInvoiceRemarks] = useState('');
 
-  // Detailed View State
   const [viewingDetails, setViewingDetails] = useState(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
+
+  // We only need a simple boolean to control the modal now
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
@@ -50,7 +52,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- 1. INITIAL BOOKING APPROVAL LOGIC ---
   const handleOpenApproveModal = (booking) => {
     setApprovingBooking(booking);
     const financials = booking.financials || {};
@@ -83,11 +84,9 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- 2. INITIAL BOOKING REJECTION LOGIC ---
   const handleRejectBooking = async (bookingId) => {
     if (!window.confirm('Are you sure you want to reject this booking? This cannot be undone.')) return;
     try {
-      // Adjusted route to ensure it hits the admin endpoint
       await api.patch(`/bookings/${bookingId}/reject`);
       toast.success('Booking rejected successfully.');
       fetchBookings();
@@ -96,10 +95,8 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- 3. CHECK-OUT / INVOICE APPROVAL LOGIC ---
   const handleOpenInvoiceModal = async (booking) => {
     try {
-      // Fetch the draft invoice created by the clerk
       const response = await api.get(`/billing/${booking.id}/invoice`);
       const invoice = response.data.data.invoice;
       
@@ -110,7 +107,6 @@ export default function AdminDashboard() {
       setInvoiceModal({ booking, invoice });
       setInvoiceRemarks('');
     } catch (error) {
-      // If 404, the clerk hasn't drafted it yet
       toast.info("No pending draft invoice found. Clerk has not initiated check-out yet.");
     }
   };
@@ -135,7 +131,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- 4. DETAILS VIEW LOGIC ---
   const fetchBookingDetails = async (id) => {
     setDetailsLoading(true);
     try {
@@ -155,7 +150,6 @@ export default function AdminDashboard() {
 
   const filteredBookings = bookings.filter((b) => {
     if (activeTab === 'ALL') return true;
-    // Allow CHECKED_OUT bookings to appear under the Active tab so Admins can print bills!
     if (activeTab === 'CHECKED_IN') return b.status === 'CHECKED_IN' || b.status === 'CHECKED_OUT';
     return b.status === activeTab;
   });
@@ -169,9 +163,14 @@ export default function AdminDashboard() {
           <div className="flex items-center gap-2 font-bold text-xl tracking-wider">
             <Shield size={24} className="text-red-300" /> BhavanBook <span className="text-red-300">| Admin</span>
           </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm">Admin: {user?.fullName}</span>
-            <button onClick={handleLogout} className="flex items-center gap-1 hover:text-red-200 transition"><LogOut size={18} /> Logout</button>
+          <div className="flex items-center gap-6">
+            <span className="text-sm hidden sm:inline">Admin: {user?.fullName}</span>
+            <button onClick={() => setShowProfileModal(true)} className="flex items-center gap-1 hover:text-red-200 transition">
+              <Settings size={18} /> Profile
+            </button>
+            <button onClick={handleLogout} className="flex items-center gap-1 hover:text-red-200 transition">
+              <LogOut size={18} /> Logout
+            </button>
           </div>
         </div>
       </nav>
@@ -229,7 +228,6 @@ export default function AdminDashboard() {
                                 </button>
                               )}
 
-                              {/* NEW: View/Print Bill Button */}
                               {booking.status === 'CHECKED_OUT' && (
                                 <button 
                                   onClick={async () => {
@@ -254,6 +252,12 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
+
+      {/* RENDER THE EXTRACTED PROFILE MODAL */}
+      <AdminProfileModal 
+        isOpen={showProfileModal} 
+        onClose={() => setShowProfileModal(false)} 
+      />
 
       {/* DETAILED VIEW MODAL */}
       {viewingDetails && (
@@ -407,15 +411,14 @@ export default function AdminDashboard() {
                 >
                   {isSubmitting ? 'Processing...' : 'Approve Check-Out'}
                 </button>
-                {/* PRINTABLE BILL MODAL */}
-    
               </div>
             </div>
           </div>
           
         </div>
       )}
-            {printModal && (
+      
+      {printModal && (
         <InvoicePrintView 
           invoice={printModal.invoice} 
           booking={printModal.booking} 

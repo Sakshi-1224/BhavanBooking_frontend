@@ -168,10 +168,22 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
                 <p className="font-bold underline mb-1">Declaration</p>
                 <p className="text-xs text-gray-600 italic">We declare that this invoice shows the actual price of the goods/services described and that all particulars are true and correct.</p>
               </div>
-              <div className="text-right mt-12">
+              
+              {/* UPDATED SIGNATURE BLOCK */}
+              <div className="text-right mt-12 flex flex-col items-end">
                 <p className="font-bold">for MAHARASHTRA MANDAL, RAIPUR</p>
-                <p className="mt-8 text-gray-500 italic">Authorised Signatory</p>
+                {invoice.adminSignatureUrl ? (
+                  <img 
+                    src={invoice.adminSignatureUrl} 
+                    alt="Admin Signature" 
+                    className="h-16 mt-2 object-contain"
+                  />
+                ) : (
+                  <p className="mt-8 text-gray-500 italic">Authorised Signatory</p>
+                )}
               </div>
+              {/* END OF UPDATED SIGNATURE BLOCK */}
+              
             </div>
           </div>
           
