@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle, Shield, LogOut, X, Eye, FileText, AlertTriangle, Settings } from 'lucide-react';
+import { CheckCircle, Shield, LogOut, X, Eye, FileText, AlertTriangle, Settings, Plus } from 'lucide-react';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
 import useAuthStore from '../../store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
 import CreateClerk from './CreateClerk';
 import InvoicePrintView from '../../components/InvoicePrintView';
-import AdminProfileModal from './AdminProfileModal'; // <-- NEW IMPORT
+import AdminProfileModal from './AdminProfileModal'; 
 
 const formatDate = (dateString) => {
   if (!dateString) return 'N/A';
@@ -31,7 +31,6 @@ export default function AdminDashboard() {
   const [viewingDetails, setViewingDetails] = useState(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
 
-  // We only need a simple boolean to control the modal now
   const [showProfileModal, setShowProfileModal] = useState(false);
 
   const { user, logout } = useAuthStore();
@@ -253,7 +252,6 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      {/* RENDER THE EXTRACTED PROFILE MODAL */}
       <AdminProfileModal 
         isOpen={showProfileModal} 
         onClose={() => setShowProfileModal(false)} 
@@ -343,78 +341,161 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* CHECK-OUT / INVOICE APPROVAL MODAL */}
+      {/* UPDATED: CHECK-OUT / INVOICE APPROVAL MODAL (TWO COLUMN LAYOUT) */}
       {invoiceModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg relative max-h-[90vh] overflow-y-auto">
-            <button onClick={() => setInvoiceModal(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X size={20} /></button>
-            <h2 className="text-xl font-bold text-gray-900 mb-1">Review Draft Invoice</h2>
-            <p className="text-sm text-gray-500 mb-4 border-b pb-4">Verify clerk's check-out deductions before finalizing.</p>
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-4xl relative max-h-[90vh] overflow-y-auto">
+            <button onClick={() => setInvoiceModal(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X size={24} /></button>
+            <h2 className="text-2xl font-bold text-gray-900 mb-1">Review Draft Invoice</h2>
+            <p className="text-sm text-gray-500 mb-6 border-b pb-4">Verify clerk's check-out deductions and final bill before approving.</p>
             
-            <div className="space-y-4 text-sm">
-              <div className="bg-gray-50 p-4 rounded-lg border space-y-2">
-                <div className="flex justify-between"><span className="text-gray-600">Electricity Consumed:</span><span className="font-semibold">{invoiceModal.invoice.electricityUnitsConsumed || 0} units (₹{invoiceModal.invoice.electricityCharges})</span></div>
-                <div className="flex justify-between"><span className="text-gray-600">Cleaning Charges:</span><span className="font-semibold">₹{invoiceModal.invoice.cleaningCharges || 0}</span></div>
-                <div className="flex justify-between"><span className="text-gray-600">Generator Charges:</span><span className="font-semibold">₹{invoiceModal.invoice.generatorCharges || 0}</span></div>
-                
-                {invoiceModal.invoice.damagesAndPenalties?.length > 0 && (
-                  <div className="pt-2 mt-2 border-t">
-                    <span className="font-bold text-red-700 flex items-center gap-1"><AlertTriangle size={14}/> Damages/Penalties:</span>
-                    <ul className="mt-1 space-y-1">
-                      {invoiceModal.invoice.damagesAndPenalties.map((p, i) => (
-                        <li key={i} className="flex justify-between text-red-600 bg-red-50 px-2 py-1 rounded">
-                          <span>{p.reason}</span><span>₹{p.amount}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-
-              <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg">
-                <div className="flex justify-between font-medium mb-1"><span className="text-gray-700">Total Deductions:</span><span>₹{invoiceModal.invoice.totalDeductions}</span></div>
-                <div className="flex justify-between font-medium mb-2"><span className="text-gray-700">Security Deposit Held:</span><span>₹{invoiceModal.invoice.securityDepositHeld}</span></div>
-                <div className="border-t border-blue-200 pt-2 mt-2 flex justify-between font-bold text-lg">
-                  {invoiceModal.invoice.finalRefundAmount > 0 ? (
-                    <><span className="text-green-700">Refund to User:</span><span className="text-green-700">₹{invoiceModal.invoice.finalRefundAmount}</span></>
-                  ) : (
-                    <><span className="text-red-700">Balance Due (User Owes):</span><span className="text-red-700">₹{invoiceModal.invoice.additionalBalanceDue}</span></>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              
+              {/* LEFT COLUMN: CLERK'S ENTRIES & ADMIN ACTIONS */}
+              <div className="space-y-6">
+                <div className="bg-gray-50 p-4 rounded-lg border space-y-3 text-sm">
+                  <h3 className="font-bold text-gray-800 border-b pb-2 flex items-center gap-2">
+                    <CheckCircle size={16} className="text-blue-600" /> Clerk's Data Entry
+                  </h3>
+                  
+                  <div className="flex justify-between"><span className="text-gray-600">Electricity Consumed:</span><span className="font-semibold">{invoiceModal.invoice.electricityUnitsConsumed || 0} units (₹{invoiceModal.invoice.electricityCharges})</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">Cleaning Charges:</span><span className="font-semibold">₹{invoiceModal.invoice.cleaningCharges || 0}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">Generator Charges:</span><span className="font-semibold">₹{invoiceModal.invoice.generatorCharges || 0}</span></div>
+                  
+                  {invoiceModal.invoice.additionalItems?.length > 0 && (
+                    <div className="pt-2 mt-2 border-t">
+                      <span className="font-bold text-blue-700 flex items-center gap-1"><Plus size={14}/> Extra Items Added:</span>
+                      <ul className="mt-1 space-y-1">
+                        {invoiceModal.invoice.additionalItems.map((item, i) => (
+                          <li key={i} className="flex justify-between text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                            <span>{item.name}</span><span>₹{item.amount}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
+
+                  {invoiceModal.invoice.damagesAndPenalties?.length > 0 && (
+                    <div className="pt-2 mt-2 border-t">
+                      <span className="font-bold text-red-700 flex items-center gap-1"><AlertTriangle size={14}/> Damages/Penalties:</span>
+                      <ul className="mt-1 space-y-1">
+                        {invoiceModal.invoice.damagesAndPenalties.map((p, i) => (
+                          <li key={i} className="flex justify-between text-red-600 bg-red-50 px-2 py-1 rounded">
+                            <span>{p.reason}</span><span>₹{p.amount}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {invoiceModal.invoice.discountAmount > 0 && (
+                    <div className="pt-2 mt-2 border-t flex justify-between font-bold text-green-700">
+                      <span>Discount Applied:</span><span>- ₹{invoiceModal.invoice.discountAmount}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Admin Remarks / Notes</label>
+                  <textarea 
+                    rows="3" 
+                    value={invoiceRemarks} 
+                    onChange={(e) => setInvoiceRemarks(e.target.value)} 
+                    placeholder="Required if rejecting back to clerk. Otherwise optional."
+                    className="w-full px-3 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  ></textarea>
+                </div>
+
+                <div className="pt-2 flex gap-3">
+                  <button 
+                    type="button" 
+                    onClick={() => handleInvoiceAction('REJECTED')} 
+                    disabled={isSubmitting} 
+                    className="flex-1 py-3 bg-red-100 text-red-700 font-bold rounded-md hover:bg-red-200 transition disabled:opacity-50 shadow-sm"
+                  >
+                    Reject to Clerk
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => handleInvoiceAction('APPROVED')} 
+                    disabled={isSubmitting} 
+                    className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700 transition disabled:opacity-50 shadow-md"
+                  >
+                    {isSubmitting ? 'Processing...' : 'Approve Check-Out'}
+                  </button>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">Admin Remarks / Notes</label>
-                <textarea 
-                  rows="2" 
-                  value={invoiceRemarks} 
-                  onChange={(e) => setInvoiceRemarks(e.target.value)} 
-                  placeholder="Required if rejecting back to clerk..."
-                  className="w-full px-3 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500"
-                ></textarea>
-              </div>
+              {/* RIGHT COLUMN: BILL PREVIEW */}
+              <div className="bg-gray-900 text-white p-6 rounded-xl shadow-inner flex flex-col justify-between h-full">
+                {(() => {
+                  const inv = invoiceModal.invoice;
+                  const base = Number(inv.baseAmount) || 0;
+                  const extras = Number(inv.totalAdditionalAmount) || 0;
+                  const discount = Number(inv.discountAmount) || 0;
+                  const taxable = base + extras - discount;
+                  const taxes = Number(inv.cgstAmount || 0) + Number(inv.sgstAmount || 0);
+                  const totalInvoiceAmount = Number(inv.totalAmount) || 0;
+                  
+                  const utilities = Number(inv.electricityCharges || 0) + Number(inv.cleaningCharges || 0) + Number(inv.generatorCharges || 0);
+                  const penalties = inv.damagesAndPenalties?.reduce((sum, p) => sum + Number(p.amount), 0) || 0;
+                  const totalDeductions = Number(inv.totalDeductions) || 0;
 
-              <div className="pt-2 flex gap-3">
-                <button 
-                  type="button" 
-                  onClick={() => handleInvoiceAction('REJECTED')} 
-                  disabled={isSubmitting} 
-                  className="flex-1 py-2.5 bg-red-100 text-red-700 font-bold rounded-md hover:bg-red-200 transition disabled:opacity-50"
-                >
-                  Reject to Clerk
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => handleInvoiceAction('APPROVED')} 
-                  disabled={isSubmitting} 
-                  className="flex-1 py-2.5 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700 transition disabled:opacity-50"
-                >
-                  {isSubmitting ? 'Processing...' : 'Approve Check-Out'}
-                </button>
+                  const grandTotalCost = totalInvoiceAmount + totalDeductions;
+                  const paid = base + Number(inv.securityDepositHeld || 0);
+                  
+                  const refundDue = Number(inv.finalRefundAmount) || 0;
+                  const balanceDue = Number(inv.additionalBalanceDue) || 0;
+
+                  return (
+                    <>
+                      <div>
+                        <h3 className="font-bold text-xl border-b border-gray-700 pb-3 mb-5 text-blue-300">Final Bill Preview</h3>
+                        <div className="space-y-3 text-sm text-gray-300">
+                          <div className="flex justify-between"><span>Base Booking:</span><span>₹{base.toLocaleString('en-IN')}</span></div>
+                          {extras > 0 && <div className="flex justify-between text-blue-200"><span>Extra Items Added:</span><span>+ ₹{extras.toLocaleString('en-IN')}</span></div>}
+                          {discount > 0 && <div className="flex justify-between text-green-400 font-bold"><span>Discount Applied:</span><span>- ₹{discount.toLocaleString('en-IN')}</span></div>}
+                          
+                          <div className="flex justify-between font-semibold text-white pt-2 border-t border-gray-700 mt-2"><span>Total Taxable Amount:</span><span>₹{taxable.toLocaleString('en-IN')}</span></div>
+                          <div className="flex justify-between"><span>Taxes (5% GST):</span><span>+ ₹{taxes.toLocaleString('en-IN')}</span></div>
+                          
+                          <div className="border-t border-gray-700 my-4"></div>
+                          
+                          <div className="flex justify-between text-orange-300"><span>Utilities (Elec/Clean/Gen):</span><span>+ ₹{utilities.toLocaleString('en-IN')}</span></div>
+                          {penalties > 0 && <div className="flex justify-between text-red-400"><span>Penalties/Damages:</span><span>+ ₹{penalties.toLocaleString('en-IN')}</span></div>}
+                          
+                          <div className="border-t border-gray-700 my-4"></div>
+
+                          <div className="flex justify-between font-bold text-lg text-white"><span>Grand Total Event Cost:</span><span>₹{grandTotalCost.toLocaleString('en-IN')}</span></div>
+                          <div className="flex justify-between font-bold text-green-400 mt-2"><span>Total Paid Upfront:</span><span>₹{paid.toLocaleString('en-IN')}</span></div>
+                        </div>
+                      </div>
+
+                      <div className="mt-8 pt-6 border-t-2 border-gray-700 text-center">
+                        {refundDue > 0 ? (
+                           <div className="bg-green-900/40 text-green-400 p-4 rounded-xl border border-green-700/50 shadow-inner">
+                             <span className="block text-xs uppercase tracking-wider mb-1 font-bold text-green-500">To be refunded</span>
+                             <span className="text-3xl font-extrabold">₹{refundDue.toLocaleString('en-IN')}</span>
+                           </div>
+                        ) : balanceDue > 0 ? (
+                           <div className="bg-red-900/40 text-red-400 p-4 rounded-xl border border-red-700/50 shadow-inner">
+                             <span className="block text-xs uppercase tracking-wider mb-1 font-bold text-red-500">Balance Due (User Pays)</span>
+                             <span className="text-3xl font-extrabold">₹{balanceDue.toLocaleString('en-IN')}</span>
+                           </div>
+                        ) : (
+                           <div className="bg-gray-800 text-gray-300 p-4 rounded-xl border border-gray-600 shadow-inner">
+                             <span className="block text-xs uppercase tracking-wider mb-1 font-bold">Settlement</span>
+                             <span className="text-2xl font-bold">Fully Settled (₹0)</span>
+                           </div>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
+            
           </div>
-          
         </div>
       )}
       

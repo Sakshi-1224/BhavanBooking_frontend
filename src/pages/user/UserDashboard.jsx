@@ -4,6 +4,8 @@ import api from '../../api/axios';
 import { toast } from 'react-toastify';
 import useAuthStore from '../../store/useAuthStore';
 import { loadRazorpayScript } from '../../utils/loadRazorpay';
+import { FileText } from 'lucide-react';
+import InvoicePrintView from '../../components/InvoicePrintView';
 
 // Helper to format dates nicely
 const formatDate = (dateString) => {
@@ -39,6 +41,7 @@ const StatusBadge = ({ status }) => {
 };
 
 export default function UserDashboard() {
+  const [printModal, setPrintModal] = useState(null);
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   
@@ -296,11 +299,36 @@ export default function UserDashboard() {
                     <CheckCircle size={18} /> Paid in Full
                   </div>
                 )}
+
+                {booking.status === 'CHECKED_OUT' && (
+  <button 
+    onClick={async () => {
+      try {
+        // Notice the specific user route: /billing/my-invoice/
+        const response = await api.get(`/billing/my-invoice/${booking.id}`);
+        setPrintModal({ invoice: response.data.data.invoice, booking });
+      } catch(err) { 
+        toast.error("Invoice not found or not yet approved by Admin."); 
+      }
+    }} 
+    className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded text-xs transition flex items-center gap-1 shadow-sm mt-2"
+  >
+    <FileText size={14}/> View / Print Bill
+  </button>
+)}
               </div>
 
             </div>
           ))}
         </div>
+      )}
+      {/* INVOICE PRINT MODAL */}
+      {printModal && (
+        <InvoicePrintView 
+          invoice={printModal.invoice} 
+          booking={printModal.booking} 
+          onClose={() => setPrintModal(null)} 
+        />
       )}
     </div>
   );

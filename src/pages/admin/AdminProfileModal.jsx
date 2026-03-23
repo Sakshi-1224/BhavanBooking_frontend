@@ -1,18 +1,52 @@
-import { useState } from 'react';
-import { X, ShieldCheck, Key, Image as ImageIcon } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, ShieldCheck, Key, Image as ImageIcon, ArrowRight } from 'lucide-react';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
 
 export default function AdminProfileModal({ isOpen, onClose }) {
   // --- Signature State ---
   const [signatureFile, setSignatureFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null); // Local preview for the new file
   const [isUploadingSignature, setIsUploadingSignature] = useState(false);
+  const [currentSignatureUrl, setCurrentSignatureUrl] = useState(null);
 
   // --- Password State ---
-  const [currentPassword, setCurrentPassword] = useState('');
+  const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+
+  // Fetch the current profile when the modal opens
+  useEffect(() => {
+    if (isOpen) {
+      fetchMyProfile();
+      setSignatureFile(null); // Reset file input when opening
+      setPreviewUrl(null);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!signatureFile) {
+      setPreviewUrl(null);
+      return;
+    }
+    const objectUrl = URL.createObjectURL(signatureFile);
+    setPreviewUrl(objectUrl);
+    
+    // Cleanup to avoid memory leaks
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [signatureFile]);
+
+  const fetchMyProfile = async () => {
+    try {
+      const response = await api.get('/auth/me');
+      if (response.data?.data?.user?.signatureUrl) {
+        setCurrentSignatureUrl(response.data.data.user.signatureUrl);
+      }
+    } catch (error) {
+      console.error("Could not fetch profile details", error);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -29,8 +63,12 @@ export default function AdminProfileModal({ isOpen, onClose }) {
       await api.patch('/auth/admin/upload-signature', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      toast.success('Signature uploaded successfully!');
+      toast.success('Signature updated successfully!');
+      
+      // Clear the file input and re-fetch to update the "Current Signature"
       setSignatureFile(null);
+      fetchMyProfile();
+      
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to upload signature.');
     } finally {
@@ -41,24 +79,22 @@ export default function AdminProfileModal({ isOpen, onClose }) {
   // 2. Handle Password Change
   const handleChangePassword = async (e) => {
     e.preventDefault();
-    if (newPassword !== confirmPassword) {
+    if (newPassword !== confirmNewPassword) {
       return toast.warn('New passwords do not match!');
-    }
-    if (newPassword.length < 6) {
-      return toast.warn('New password must be at least 6 characters long.');
     }
 
     setIsUpdatingPassword(true);
     try {
       await api.patch('/auth/update-password', {
-        currentPassword,
-        newPassword
+        oldPassword,
+        newPassword,
+        confirmNewPassword
       });
       
       toast.success('Password updated successfully!');
-      setCurrentPassword('');
+      setOldPassword('');
       setNewPassword('');
-      setConfirmPassword('');
+      setConfirmNewPassword('');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update password.');
     } finally {
@@ -68,7 +104,7 @@ export default function AdminProfileModal({ isOpen, onClose }) {
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg relative max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl relative max-h-[90vh] overflow-y-auto">
         
         {/* Modal Header */}
         <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center z-10">
@@ -93,6 +129,37 @@ export default function AdminProfileModal({ isOpen, onClose }) {
               Upload your signature. This will be automatically attached to user invoices upon approval.
             </p>
 
+            {/* --- VISUAL COMPARISON BOX --- */}
+            <div className="flex items-center gap-4 mb-4">
+              
+              {/* CURRENT SIGNATURE */}
+              <div className="flex-1 bg-gray-50 border border-gray-200 rounded-lg p-3 flex flex-col items-center justify-center shadow-inner h-28">
+                <p className="text-[10px] uppercase font-bold tracking-widest text-gray-500 mb-2">Current Signature</p>
+                {currentSignatureUrl ? (
+                  <div className="bg-white p-2 rounded border shadow-sm w-full flex justify-center h-14">
+                    <img src={currentSignatureUrl} alt="Current" className="h-full object-contain" />
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400 italic">No signature saved.</p>
+                )}
+              </div>
+
+              {previewUrl && (
+                <ArrowRight className="text-gray-300" size={24} />
+              )}
+
+              {/* NEW PREVIEW */}
+              {previewUrl && (
+                <div className="flex-1 bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center shadow-inner h-28 relative">
+                  <div className="absolute -top-2 -right-2 bg-blue-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full animate-pulse">NEW</div>
+                  <p className="text-[10px] uppercase font-bold tracking-widest text-blue-600 mb-2">New Preview</p>
+                  <div className="bg-white p-2 rounded border border-blue-200 shadow-sm w-full flex justify-center h-14">
+                    <img src={previewUrl} alt="Preview" className="h-full object-contain" />
+                  </div>
+                </div>
+              )}
+            </div>
+
             <form onSubmit={handleUploadSignature} className="space-y-3 bg-gray-50 p-4 rounded-lg border">
               <div>
                 <input
@@ -101,14 +168,14 @@ export default function AdminProfileModal({ isOpen, onClose }) {
                   onChange={(e) => setSignatureFile(e.target.files[0])}
                   className="w-full px-3 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
                 />
-                <p className="text-xs text-gray-500 mt-1">Accepts transparent PNG or JPG format.</p>
+                <p className="text-xs text-gray-500 mt-1">Accepts transparent PNG or JPG format. Crop closely for best results.</p>
               </div>
               <button 
                 type="submit" 
                 disabled={isUploadingSignature || !signatureFile} 
-                className="w-full py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition disabled:opacity-50"
+                className="w-full py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition disabled:opacity-50 shadow-sm"
               >
-                {isUploadingSignature ? 'Uploading...' : 'Save Signature'}
+                {isUploadingSignature ? 'Uploading...' : 'Save New Signature'}
               </button>
             </form>
           </section>
@@ -129,8 +196,8 @@ export default function AdminProfileModal({ isOpen, onClose }) {
                 <input
                   type="password"
                   required
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  value={oldPassword}
+                  onChange={(e) => setOldPassword(e.target.value)}
                   className="w-full px-3 py-2 border rounded-md focus:ring-red-500 focus:border-red-500 text-sm"
                   placeholder="Enter current password"
                 />
@@ -153,18 +220,19 @@ export default function AdminProfileModal({ isOpen, onClose }) {
                   <input
                     type="password"
                     required
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    value={confirmNewPassword}
+                    onChange={(e) => setConfirmNewPassword(e.target.value)}
                     className="w-full px-3 py-2 border rounded-md focus:ring-red-500 focus:border-red-500 text-sm"
                     placeholder="Confirm new"
                   />
                 </div>
               </div>
+              <p className="text-[10px] text-gray-500">Must be 8+ chars, with 1 uppercase, 1 lowercase, 1 number, and 1 special character.</p>
 
               <button 
                 type="submit" 
-                disabled={isUpdatingPassword || !currentPassword || !newPassword || !confirmPassword} 
-                className="w-full py-2 bg-red-600 text-white font-medium rounded-md hover:bg-red-700 transition disabled:opacity-50 mt-2"
+                disabled={isUpdatingPassword || !oldPassword || !newPassword || !confirmNewPassword} 
+                className="w-full py-2 bg-red-600 text-white font-medium rounded-md hover:bg-red-700 transition disabled:opacity-50 shadow-sm mt-2"
               >
                 {isUpdatingPassword ? 'Updating...' : 'Update Password'}
               </button>
