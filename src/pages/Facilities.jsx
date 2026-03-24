@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../api/axios';
 import { toast } from 'react-toastify';
 import useAuthStore from '../store/useAuthStore';
-import { Search, MapPin, UserCircle, Star, Check, Filter, ChevronDown, Calendar, Users, Layers, AlertCircle } from 'lucide-react';
+import { Search, MapPin, UserCircle, Star, Check, Filter, ChevronDown, Calendar, Users, Layers, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const getPlaceholderImage = (type, index) => {
   const images = {
@@ -18,13 +18,110 @@ const getPlaceholderImage = (type, index) => {
   return typeImages[index % typeImages.length];
 };
 
+// Dedicated card component to handle its own image slider state
+const FacilityCard = ({ facility, index, navigate }) => {
+  const [imgIdx, setImgIdx] = useState(0);
+  const isAvailable = facility.isAvailableForDates !== false;
+  
+  // Safety check for images
+  const images = Array.isArray(facility.images) && facility.images.length > 0 
+    ? facility.images 
+    : [getPlaceholderImage(facility.facilityType, index)];
+
+  const nextImg = (e) => {
+    e.stopPropagation();
+    setImgIdx((prev) => (prev + 1) % images.length);
+  };
+
+  const prevImg = (e) => {
+    e.stopPropagation();
+    setImgIdx((prev) => (prev === 0 ? images.length - 1 : prev - 1));
+  };
+
+  return (
+    <div 
+      className={`flex flex-col md:flex-row bg-white rounded-xl border shadow-sm transition overflow-hidden ${!isAvailable ? 'opacity-60 cursor-not-allowed grayscale-[0.5]' : 'hover:shadow-md cursor-pointer'}`}
+      onClick={() => isAvailable ? navigate(`/book/${facility.id}`) : toast.error("This package is sold out for the selected dates.")}
+    >
+      <div className="md:w-1/3 relative h-48 md:h-auto group">
+        <img 
+          src={images[imgIdx]} 
+          alt={facility.name} 
+          className="object-cover w-full h-full transition-opacity duration-300"
+          onError={(e) => { e.target.onerror = null; e.target.src = getPlaceholderImage(facility.facilityType, index); }} 
+        />
+        
+        {/* Carousel Controls (Only show if multiple images exist) */}
+        {images.length > 1 && (
+          <>
+            <button type="button" onClick={prevImg} className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/80 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <ChevronLeft size={16} />
+            </button>
+            <button type="button" onClick={nextImg} className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/80 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <ChevronRight size={16} />
+            </button>
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+              {images.map((_, i) => (
+                <div key={i} className={`w-1.5 h-1.5 rounded-full ${i === imgIdx ? 'bg-white' : 'bg-white/50'}`} />
+              ))}
+            </div>
+          </>
+        )}
+
+        <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm text-white text-xs font-bold px-2 py-1 rounded pointer-events-none">
+          {facility.facilityType}
+        </div>
+        
+        {!isAvailable && (
+          <div className="absolute inset-0 bg-red-900/40 flex items-center justify-center pointer-events-none">
+            <div className="bg-red-600 text-white font-extrabold px-4 py-2 rounded shadow-lg transform -rotate-12 border-2 border-red-800 tracking-wider">
+              BOOKED
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="md:w-2/3 p-4 flex flex-col justify-between">
+        <div>
+          <div className="flex justify-between items-start">
+            <h2 className="text-xl font-bold text-gray-900">{facility.name}</h2>
+          </div>
+          <p className="text-gray-500 text-sm mt-2 line-clamp-2">{facility.description}</p>
+          
+          {facility.pricingDetails?.included_facilities && (
+            <div className="flex flex-wrap gap-2 mt-4">
+              {facility.pricingDetails.included_facilities.slice(0, 3).map((inc, i) => (
+                <span key={i} className="flex items-center gap-1 text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded">
+                  <Check size={12} className="text-green-600"/> {inc}
+                </span>
+              ))}
+              {facility.pricingDetails.included_facilities.length > 3 && (
+                <span className="text-xs text-blue-600 font-semibold bg-blue-50 px-2 py-1 rounded">+{facility.pricingDetails.included_facilities.length - 3} more</span>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4 flex justify-between items-end border-t pt-4">
+          <div>
+            {!isAvailable && <span className="flex items-center gap-1 text-red-600 text-xs font-bold bg-red-50 px-2 py-1 rounded border border-red-100"><AlertCircle size={14}/> Unavailable for selected dates</span>}
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-gray-500 mb-1">Price {facility.pricingType === 'HOURLY' ? 'per hour' : facility.pricingType === 'TIERED' ? 'per day' : 'per slot'}</p>
+            <p className={`text-2xl font-extrabold ${!isAvailable ? 'text-gray-400 line-through' : 'text-gray-900'}`}>₹{parseInt(facility.baseRate).toLocaleString('en-IN')}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function Facilities() {
   const [facilities, setFacilities] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const { user, isAuthenticated, logout } = useAuthStore();
 
-  // Search State
   const [searchDates, setSearchDates] = useState({
     startDate: '',
     endDate: ''
@@ -39,9 +136,6 @@ export default function Facilities() {
       }
       
       const response = await api.get(url);
-      
-      // FIX: Strictly ONLY show Packages and Complexes on the main dashboard list.
-      // All other atomic facilities (Rooms, Halls, Lawns, Items) will only be accessible via "Custom Package"
       const standardPackages = response.data.data.filter(
         f => f.facilityType === 'PACKAGE' || f.facilityType === 'COMPLEX'
       );
@@ -105,7 +199,7 @@ export default function Facilities() {
         </div>
       </nav>
 
-      {/* Goibibo Style Search Header */}
+      {/* Search Header */}
       <div className="bg-gradient-to-r from-blue-700 to-blue-900 pb-12 pt-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h1 className="text-white text-3xl font-bold mb-6">Find available spaces for your dates</h1>
@@ -159,12 +253,9 @@ export default function Facilities() {
         </div>
       </div>
 
-      {/* Main Content Area */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col lg:flex-row gap-6">
-        
         <div className="w-full lg:w-3/4 space-y-6 mx-auto">
           
-          {/* Custom Booking Mode */}
           <div className="flex flex-col md:flex-row bg-gradient-to-r from-blue-50 to-indigo-100 rounded-xl border border-blue-200 shadow-md hover:shadow-lg transition-all overflow-hidden cursor-pointer transform hover:-translate-y-1" onClick={() => navigate('/book/custom')}>
             <div className="md:w-1/3 bg-blue-600 flex flex-col items-center justify-center text-white p-6">
               <Layers size={48} className="mb-2 opacity-80" />
@@ -189,64 +280,14 @@ export default function Facilities() {
           ) : facilities.length === 0 ? (
              <div className="text-center p-10 text-gray-500 font-medium text-lg border rounded-xl bg-white shadow-sm">No packages match your search criteria.</div>
           ) : (
-            facilities.map((facility, index) => {
-              const isAvailable = facility.isAvailableForDates !== false;
-
-              return (
-                <div 
-                  key={facility.id} 
-                  className={`flex flex-col md:flex-row bg-white rounded-xl border shadow-sm transition overflow-hidden ${!isAvailable ? 'opacity-60 cursor-not-allowed grayscale-[0.5]' : 'hover:shadow-md cursor-pointer'}`}
-                  onClick={() => isAvailable ? navigate(`/book/${facility.id}`) : toast.error("This package is sold out for the selected dates.")}
-                >
-                  <div className="md:w-1/3 relative h-48 md:h-auto">
-                    <img src={getPlaceholderImage(facility.facilityType, index)} alt={facility.name} className="object-cover w-full h-full" />
-                    <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm text-white text-xs font-bold px-2 py-1 rounded">
-                      {facility.facilityType}
-                    </div>
-                    {/* SOLD OUT OVERLAY */}
-                    {!isAvailable && (
-                      <div className="absolute inset-0 bg-red-900/40 flex items-center justify-center">
-                        <div className="bg-red-600 text-white font-extrabold px-4 py-2 rounded shadow-lg transform -rotate-12 border-2 border-red-800 tracking-wider">
-                          BOOKED
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="md:w-2/3 p-4 flex flex-col justify-between">
-                    <div>
-                      <div className="flex justify-between items-start">
-                        <h2 className="text-xl font-bold text-gray-900">{facility.name}</h2>
-                      </div>
-                      <p className="text-gray-500 text-sm mt-2 line-clamp-2">{facility.description}</p>
-                      
-                      {facility.pricingDetails?.included_facilities && (
-                        <div className="flex flex-wrap gap-2 mt-4">
-                          {facility.pricingDetails.included_facilities.slice(0, 3).map((inc, i) => (
-                            <span key={i} className="flex items-center gap-1 text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded">
-                              <Check size={12} className="text-green-600"/> {inc}
-                            </span>
-                          ))}
-                          {facility.pricingDetails.included_facilities.length > 3 && (
-                            <span className="text-xs text-blue-600 font-semibold bg-blue-50 px-2 py-1 rounded">+{facility.pricingDetails.included_facilities.length - 3} more</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="mt-4 flex justify-between items-end border-t pt-4">
-                      <div>
-                        {!isAvailable && <span className="flex items-center gap-1 text-red-600 text-xs font-bold bg-red-50 px-2 py-1 rounded border border-red-100"><AlertCircle size={14}/> Unavailable for selected dates</span>}
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-gray-500 mb-1">Price {facility.pricingType === 'HOURLY' ? 'per hour' : facility.pricingType === 'TIERED' ? 'per day' : 'per slot'}</p>
-                        <p className={`text-2xl font-extrabold ${!isAvailable ? 'text-gray-400 line-through' : 'text-gray-900'}`}>₹{parseInt(facility.baseRate).toLocaleString('en-IN')}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })
+            facilities.map((facility, index) => (
+              <FacilityCard 
+                key={facility.id} 
+                facility={facility} 
+                index={index} 
+                navigate={navigate} 
+              />
+            ))
           )}
         </div>
       </main>

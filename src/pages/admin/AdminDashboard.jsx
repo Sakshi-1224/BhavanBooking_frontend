@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import CreateClerk from './CreateClerk';
 import InvoicePrintView from '../../components/InvoicePrintView';
 import AdminProfileModal from './AdminProfileModal'; 
+import ReportsView from './ReportsView';
 
 const formatDate = (dateString) => {
   if (!dateString) return 'N/A';
@@ -182,10 +183,15 @@ export default function AdminDashboard() {
             <button onClick={() => setActiveTab('CHECKED_IN')} className={`px-4 py-2 text-sm font-medium rounded-md transition whitespace-nowrap ${activeTab === 'CHECKED_IN' ? 'bg-orange-100 text-orange-800' : 'text-gray-600 hover:bg-gray-50'}`}>Active / Check-Outs</button>
             <button onClick={() => setActiveTab('ALL')} className={`px-4 py-2 text-sm font-medium rounded-md transition whitespace-nowrap ${activeTab === 'ALL' ? 'bg-gray-200 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>All Bookings</button>
             <button onClick={() => setActiveTab('STAFF')} className={`px-4 py-2 text-sm font-medium rounded-md transition whitespace-nowrap ${activeTab === 'STAFF' ? 'bg-blue-100 text-blue-800' : 'text-gray-600 hover:bg-gray-50'}`}>Staff</button>
+            <button onClick={() => setActiveTab('REPORTS')} className={`px-4 py-2 text-sm font-medium rounded-md transition whitespace-nowrap ${activeTab === 'REPORTS' ? 'bg-indigo-100 text-indigo-800' : 'text-gray-600 hover:bg-gray-50'}`}>Reports & Analytics</button>
           </div>
         </div>
 
-        {activeTab === 'STAFF' ? <CreateClerk /> : (
+        {activeTab === 'STAFF' ? (
+          <CreateClerk />
+        ) : activeTab === 'REPORTS' ? (
+          <ReportsView />
+        ) : (
           <div className="bg-white shadow-sm rounded-lg border overflow-hidden">
              <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
@@ -473,17 +479,23 @@ export default function AdminDashboard() {
 
                       <div className="mt-8 pt-6 border-t-2 border-gray-700 text-center">
                         {refundDue > 0 ? (
-                           <div className="bg-green-900/40 text-green-400 p-4 rounded-xl border border-green-700/50 shadow-inner">
+                           <div className="bg-green-900/40 text-green-400 p-4 rounded-xl border border-green-700/50 shadow-inner flex flex-col items-center">
                              <span className="block text-xs uppercase tracking-wider mb-1 font-bold text-green-500">To be refunded</span>
                              <span className="text-3xl font-extrabold">₹{refundDue.toLocaleString('en-IN')}</span>
+                             <span className="mt-2 text-[10px] uppercase tracking-wider px-2 py-1 rounded bg-green-800/50 text-green-200 border border-green-600/50">
+                               Mode: {inv.settlementMode || 'ONLINE'}{invoiceModal.booking?.bookingSource === 'WALK_IN' ? '(Walk-in)' : ''}
+                             </span>
                            </div>
                         ) : balanceDue > 0 ? (
-                           <div className="bg-red-900/40 text-red-400 p-4 rounded-xl border border-red-700/50 shadow-inner">
+                           <div className="bg-red-900/40 text-red-400 p-4 rounded-xl border border-red-700/50 shadow-inner flex flex-col items-center">
                              <span className="block text-xs uppercase tracking-wider mb-1 font-bold text-red-500">Balance Due (User Pays)</span>
                              <span className="text-3xl font-extrabold">₹{balanceDue.toLocaleString('en-IN')}</span>
+                             <span className="mt-2 text-[10px] uppercase tracking-wider px-2 py-1 rounded bg-red-800/50 text-red-200 border border-red-600/50">
+                               Mode: {inv.settlementMode || 'ONLINE'}{invoiceModal.booking?.bookingSource === 'WALK_IN' ? '(Walk-in)' : ''}
+                             </span>
                            </div>
                         ) : (
-                           <div className="bg-gray-800 text-gray-300 p-4 rounded-xl border border-gray-600 shadow-inner">
+                           <div className="bg-gray-800 text-gray-300 p-4 rounded-xl border border-gray-600 shadow-inner flex flex-col items-center">
                              <span className="block text-xs uppercase tracking-wider mb-1 font-bold">Settlement</span>
                              <span className="text-2xl font-bold">Fully Settled (₹0)</span>
                            </div>

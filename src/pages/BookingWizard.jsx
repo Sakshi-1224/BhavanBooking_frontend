@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Info, Clock, Plus, Minus, AlertTriangle, CheckCircle, Package, Calendar } from 'lucide-react';
 import api from '../api/axios';
 import { toast } from 'react-toastify';
 import useAuthStore from '../store/useAuthStore';
 
-// Utility to handle timezone offsets for datetime-local strings sent to backend
+// Import our new components
+import StaffBookingForm from '../components/booking/StaffBookingForm';
+import FacilityExtrasList from '../components/booking/FacilityExtrasList';
+import BookingWidget from '../components/booking/BookingWidget';
+
 const toLocalISOString = (date) => {
   const tzOffset = (new Date()).getTimezoneOffset() * 60000;
   return new Date(date.getTime() - tzOffset).toISOString().slice(0, 16);
@@ -16,31 +19,29 @@ export default function BookingWizard() {
   const isCustomMode = facilityId === 'custom';
   
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, role } = useAuthStore();
+  const isStaff = role === 'ADMIN' || role === 'CLERK';
 
   const [facility, setFacility] = useState(null);
   const [extraItems, setExtraItems] = useState([]); 
   const [selectedExtras, setSelectedExtras] = useState({}); 
   const [loading, setLoading] = useState(true);
   
-  // DYNAMIC TIMING STATE
+  // State for Image Gallery
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [bookingOption, setBookingOption] = useState(''); // Used for Slots/Tiered
+  const [bookingOption, setBookingOption] = useState(''); 
 
-  const [formData, setFormData] = useState({
-    startTime: '',
-    endTime: '',
-    guestCount: 1,
-    eventType: 'Marriage'
-  });
-
+  const [formData, setFormData] = useState({ startTime: '', endTime: '', guestCount: 1, eventType: 'Marriage' });
+  const [customerData, setCustomerData] = useState({ fullName: '', email: '', mobile: '', address: '' });
+  
   const [availability, setAvailability] = useState(null);
   const [partialAvailability, setPartialAvailability] = useState(null); 
   const [isChecking, setIsChecking] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 1. Initial Load of Facilities
   useEffect(() => {
     const fetchFacilities = async () => {
       try {
@@ -49,15 +50,12 @@ export default function BookingWizard() {
         
         if (isCustomMode) {
           setFacility({
-            id: 'custom',
-            name: 'Build Your Custom Booking',
+            id: 'custom', name: 'Build Your Custom Booking',
             description: 'Select the specific facilities you need. Timings are fixed automatically as per management rules.',
-            baseRate: 0,
-            pricingType: 'MIXED'
+            baseRate: 0, pricingType: 'MIXED'
           });
           const customOptions = facilities.filter(f => f.facilityType !== 'PACKAGE' && f.facilityType !== 'COMPLEX');
           setExtraItems(customOptions.map(item => ({ ...item, isAvailableForDates: true })));
-        
         } else {
           const found = facilities.find(f => f.id === facilityId);
           if (found) setFacility(found);
@@ -67,92 +65,47 @@ export default function BookingWizard() {
           if (found?.name?.toLowerCase().includes('complete bhavan')) {
              extras = facilities.filter(f => f.name.toLowerCase().includes('mini hall'));
           }
-
           setExtraItems(extras.map(item => ({ ...item, isAvailableForDates: true })));
         }
-      } catch (error) {
-        toast.error('Failed to load details');
-      } finally {
-        setLoading(false);
-      }
+      } catch (error) { toast.error('Failed to load details'); } finally { setLoading(false); }
     };
     fetchFacilities();
   }, [facilityId, isCustomMode]);
 
-  // 2. LOGIC TO DETERMINE IF WE NEED A CHECK-OUT DATE PICKER
   let isOnlyMiniHall = false;
   let hasRoom = false;
 
   if (isCustomMode) {
     const selectedIds = Object.keys(selectedExtras);
-    if (selectedIds.length === 1) {
-       const item = extraItems.find(i => i.id === selectedIds[0]);
-       if (item?.name.toLowerCase().includes('mini hall')) {
-          isOnlyMiniHall = true;
-       }
+    if (selectedIds.length === 1 && extraItems.find(i => i.id === selectedIds[0])?.name.toLowerCase().includes('mini hall')) {
+      isOnlyMiniHall = true;
     }
-    selectedIds.forEach(id => {
-        const item = extraItems.find(i => i.id === id);
-        if (item?.facilityType === 'ROOM') hasRoom = true;
-    });
+    selectedIds.forEach(id => { if (extraItems.find(i => i.id === id)?.facilityType === 'ROOM') hasRoom = true; });
   }
 
   let needsEndDate = false;
-  if (isCustomMode) {
-     // Show Check-out Date for custom bookings UNLESS only Mini Hall is selected
-     needsEndDate = Object.keys(selectedExtras).length > 0 && !isOnlyMiniHall;
-  } else if (facility) {
-     // Show Check-out Date for FIXED packages (Full Day) and standalone Rooms
-     if (facility.pricingType === 'FIXED' || facility.facilityType === 'ROOM') {
-        needsEndDate = true;
-     }
-  }
+  if (isCustomMode) { needsEndDate = Object.keys(selectedExtras).length > 0 && !isOnlyMiniHall; } 
+  else if (facility) { if (facility.pricingType === 'FIXED' || facility.facilityType === 'ROOM') needsEndDate = true; }
 
-  // 3. DYNAMIC TIMING LOGIC (Converts Dates + Rules into strict Start/End Times)
   useEffect(() => {
     if (!startDate || !facility) return;
-
     const start = new Date(startDate);
     let end = new Date(startDate);
     let isValid = false;
 
     if (needsEndDate) {
-      if (!endDate) {
-        setFormData(prev => ({ ...prev, startTime: '', endTime: '' }));
-        return; // Wait for user to pick the end date
-      }
+      if (!endDate) { setFormData(prev => ({ ...prev, startTime: '', endTime: '' })); return; }
       end = new Date(endDate);
-      
       if (isCustomMode) {
-          // For Custom Modes with Rooms: Enforce 10AM to 8AM
-          if (hasRoom) {
-             start.setHours(10, 0);
-             end.setHours(8, 0); 
-          } else {
-             // For standard custom items: 8AM to 8PM
-             start.setHours(8, 0);
-             end.setHours(8, 0);
-          }
+          if (hasRoom) { start.setHours(10, 0); end.setHours(8, 0); } else { start.setHours(8, 0); end.setHours(8, 0); }
           isValid = true;
       } else {
-          // For standalone packages
-          if (facility.facilityType === 'ROOM') {
-             start.setHours(10, 0);
-             end.setHours(8, 0);
-          } else {
-             // FIXED Packages (e.g. Lawn + Kitchen, Full Day Halls)
-             start.setHours(8, 0);
-             end.setHours(8, 0);
-          }
+          if (facility.facilityType === 'ROOM') { start.setHours(10, 0); end.setHours(8, 0); } else { start.setHours(8, 0); end.setHours(8, 0); }
           isValid = true;
       }
     } else {
-      // SINGLE EVENT DATE LOGIC
-      if (isCustomMode && isOnlyMiniHall) {
-          start.setHours(18, 0);
-          end.setHours(23, 0);
-          isValid = true;
-      } else if (!isCustomMode) {
+      if (isCustomMode && isOnlyMiniHall) { start.setHours(18, 0); end.setHours(23, 0); isValid = true; } 
+      else if (!isCustomMode) {
           if (facility.pricingType === 'TIERED') {
             if (bookingOption === '1_day') { start.setHours(10, 0); end.setDate(end.getDate() + 1); end.setHours(10, 0); isValid = true; }
             else if (bookingOption === '2_days') { start.setHours(10, 0); end.setDate(end.getDate() + 2); end.setHours(10, 0); isValid = true; }
@@ -168,447 +121,194 @@ export default function BookingWizard() {
             if (bookingOption === 'morning') { start.setHours(10, 0); end.setHours(10 + dur, 0); isValid = true; }
             else if (bookingOption === 'evening') { start.setHours(17, 0); end.setHours(17 + dur, 0); isValid = true; }
           }
-          else if (facility.pricingType === 'HOURLY') {
-            start.setHours(18, 0); end.setHours(23, 0); isValid = true;
-          }
+          else if (facility.pricingType === 'HOURLY') { start.setHours(18, 0); end.setHours(23, 0); isValid = true; }
       }
     }
 
     if (isValid) {
       if (end <= start) {
-         toast.error("Check-out must be after check-in. (Rooms must span at least 1 night)");
-         setFormData(prev => ({ ...prev, startTime: '', endTime: '' }));
-         return;
+         toast.error("Check-out must be after check-in.");
+         setFormData(prev => ({ ...prev, startTime: '', endTime: '' })); return;
       }
       setFormData(prev => ({ ...prev, startTime: toLocalISOString(start), endTime: toLocalISOString(end) }));
-    } else {
-      setFormData(prev => ({ ...prev, startTime: '', endTime: '' }));
-    }
-
+    } else { setFormData(prev => ({ ...prev, startTime: '', endTime: '' })); }
   }, [startDate, endDate, bookingOption, facility, isCustomMode, needsEndDate, hasRoom, isOnlyMiniHall]);
 
-  // 4. Dynamic Live Availability Check 
   useEffect(() => {
     const checkItemAvailability = async () => {
       if (formData.startTime && formData.endTime) {
         try {
           const response = await api.get(`/facilities?startDate=${formData.startTime}&endDate=${formData.endTime}`);
           const updatedFacilities = response.data.data;
-          
-          setExtraItems(prevItems => 
-            prevItems.map(item => {
+          setExtraItems(prevItems => prevItems.map(item => {
               const updatedItem = updatedFacilities.find(f => f.id === item.id);
               return updatedItem ? { ...item, isAvailableForDates: updatedItem.isAvailableForDates } : item;
-            })
-          );
+          }));
 
           setSelectedExtras(prev => {
             const newSelected = { ...prev };
             let itemsRemoved = false;
             for (const id in newSelected) {
               const updatedItem = updatedFacilities.find(f => f.id === id);
-              if (updatedItem && updatedItem.isAvailableForDates === false) {
-                delete newSelected[id];
-                itemsRemoved = true;
-              }
+              if (updatedItem && updatedItem.isAvailableForDates === false) { delete newSelected[id]; itemsRemoved = true; }
             }
-            if (itemsRemoved) toast.warn("Some selected items were removed because they are not available for these new dates.");
+            if (itemsRemoved) toast.warn("Some selected items were removed because they are not available for these dates.");
             return newSelected;
           });
-        } catch (error) {
-          console.error("Failed to check live availability", error);
-        }
-      } else {
-        setExtraItems(prevItems => prevItems.map(item => ({ ...item, isAvailableForDates: true })));
-      }
+        } catch (error) { console.error("Failed to check live availability", error); }
+      } else { setExtraItems(prevItems => prevItems.map(item => ({ ...item, isAvailableForDates: true }))); }
     };
-
     const timeoutId = setTimeout(() => { checkItemAvailability(); }, 500);
     return () => clearTimeout(timeoutId);
   }, [formData.startTime, formData.endTime]);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
-    setAvailability(null);
-    setPartialAvailability(null);
+    setAvailability(null); setPartialAvailability(null);
   };
 
   const handleCheckboxChange = (id, isChecked) => {
     setSelectedExtras(prev => {
       if (isChecked) return { ...prev, [id]: 1 };
-      const { [id]: _, ...rest } = prev;
-      return rest;
+      const { [id]: _, ...rest } = prev; return rest;
     });
-    setAvailability(null);
-    setPartialAvailability(null);
+    setAvailability(null); setPartialAvailability(null);
   };
 
   const handleQuantityChange = (id, delta) => {
     setSelectedExtras(prev => {
-      const current = prev[id] || 1;
-      const next = Math.max(1, current + delta);
-      return { ...prev, [id]: next };
+      const current = prev[id] || 1; const next = Math.max(1, current + delta); return { ...prev, [id]: next };
     });
-    setAvailability(null);
-    setPartialAvailability(null);
+    setAvailability(null); setPartialAvailability(null);
   };
 
+  const safeSetStartDate = (val) => { setStartDate(val); setAvailability(null); setPartialAvailability(null); };
+  const safeSetEndDate = (val) => { setEndDate(val); setAvailability(null); setPartialAvailability(null); };
+  const safeSetBookingOption = (val) => { setBookingOption(val); setAvailability(null); setPartialAvailability(null); };
+
   const buildPayload = (isBookingPartial = false) => {
-    const userSelectedCustoms = Object.entries(selectedExtras).map(([id, quantity]) => ({
-      facilityId: id,
-      quantity
-    }));
-
+    const userSelectedCustoms = Object.entries(selectedExtras).map(([id, quantity]) => ({ facilityId: id, quantity }));
     if (isCustomMode) return { ...formData, customFacilities: userSelectedCustoms };
-
     if (isBookingPartial && partialAvailability) {
-      const remainingCustoms = partialAvailability.availableAlternatives.map(alt => ({
-        facilityId: alt.facilityId,
-        quantity: alt.quantity || 1
-      }));
+      const remainingCustoms = partialAvailability.availableAlternatives.map(alt => ({ facilityId: alt.facilityId, quantity: alt.quantity || 1 }));
       return { ...formData, customFacilities: [...remainingCustoms, ...userSelectedCustoms] };
     }
-
     return { facilityId, ...formData, customFacilities: userSelectedCustoms };
   };
 
   const handleCheckAvailability = async () => {
     if (!formData.startTime || !formData.endTime) return toast.warn('Please complete the date and time selection.');
-    if (isCustomMode && Object.keys(selectedExtras).length === 0) return toast.warn('Please select at least one item for your custom booking.');
+    if (isCustomMode && Object.keys(selectedExtras).length === 0) return toast.warn('Please select at least one item.');
     
-    setIsChecking(true);
-    setPartialAvailability(null);
+    setIsChecking(true); setPartialAvailability(null);
     try {
       const response = await api.post('/bookings/check-availability', buildPayload(false));
       const data = response.data.data;
-      
-      if (data.isAvailable) {
-        setAvailability(data);
-        toast.success('Dates are available!');
-      } else if (data.isPartiallyAvailable) {
-        setPartialAvailability(data);
-        toast.warn('Package is partially booked. Review remaining options.');
-      } else {
-        setAvailability(data);
-        toast.error(data.message || 'Dates are currently fully booked.');
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Error checking availability');
-    } finally {
-      setIsChecking(false);
-    }
+      if (data.isAvailable) { setAvailability(data); toast.success('Dates are available!'); } 
+      else if (data.isPartiallyAvailable) { setPartialAvailability(data); toast.warn('Package is partially booked.'); } 
+      else { setAvailability(data); toast.error(data.message || 'Dates are currently fully booked.'); }
+    } catch (error) { toast.error(error.response?.data?.message || 'Error checking availability'); } 
+    finally { setIsChecking(false); }
   };
 
   const handleBookNow = async (isBookingPartial = false) => {
-    if (!isAuthenticated) {
-      toast.info('Please log in to complete your booking.');
-      return navigate('/user/login');
-    }
+    if (!isAuthenticated) { toast.info('Please log in to complete your booking.'); return navigate('/user/login'); }
+    if (isStaff && (!customerData.fullName || !customerData.mobile)) { return toast.warn("Please provide guest's full name and mobile."); }
+
     setIsSubmitting(true);
     try {
-      await api.post('/bookings', buildPayload(isBookingPartial));
+      let finalPayload = buildPayload(isBookingPartial);
+      let endpoint = isStaff ? '/bookings/on-behalf' : '/bookings';
+      if (isStaff) finalPayload = { ...finalPayload, ...customerData };
+
+      const response = await api.post(endpoint, finalPayload);
       toast.success('Booking requested successfully!');
-      navigate('/my-bookings'); 
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to submit booking');
-    } finally {
-      setIsSubmitting(false);
-    }
+      
+      if (response.data?.data?.isNewUser) toast.info(`A new account was created for ${customerData.fullName}. Credentials sent via SMS/Email.`);
+
+      if (role === 'ADMIN') navigate('/admin/dashboard');
+      else if (role === 'CLERK') navigate('/clerk/dashboard');
+      else navigate('/my-bookings'); 
+
+    } catch (error) { toast.error(error.response?.data?.message || 'Failed to submit booking'); } 
+    finally { setIsSubmitting(false); }
   };
 
   if (loading || !facility) return <div className="p-20 text-center text-xl text-gray-500">Loading facility data...</div>;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col md:flex-row gap-12">
-      
-      {/* Left Column: Info & Add-ons */}
       <div className="md:w-2/3">
+        
+        {/* --- MAIN FACILITY INTERACTIVE IMAGE GALLERY --- */}
+        {!isCustomMode && Array.isArray(facility.images) && facility.images.length > 0 && (
+          <div className="mb-6">
+            <div className="rounded-2xl overflow-hidden shadow-md h-64 sm:h-96 relative group bg-gray-100 mb-3">
+              <img 
+                src={facility.images[currentImageIndex]} 
+                alt={facility.name} 
+                className="w-full h-full object-cover transition-opacity duration-300"
+                onError={(e) => { e.target.style.display = 'none'; }}
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none"></div>
+              <div className="absolute bottom-4 left-4 text-white">
+                 <span className="bg-blue-600 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow">
+                   {facility.facilityType}
+                 </span>
+              </div>
+            </div>
+
+            {facility.images.length > 1 && (
+              <div className="flex gap-2 overflow-x-auto pb-2 snap-x hide-scrollbar">
+                {facility.images.map((img, idx) => (
+                  <button 
+                    key={idx}
+                    type="button"
+                    onClick={() => setCurrentImageIndex(idx)}
+                    className={`flex-shrink-0 w-20 h-20 sm:w-24 sm:h-24 rounded-lg overflow-hidden border-2 transition-all snap-start ${
+                      currentImageIndex === idx 
+                        ? 'border-blue-600 opacity-100 shadow-md' 
+                        : 'border-transparent opacity-60 hover:opacity-100'
+                    }`}
+                  >
+                    <img 
+                      src={img} 
+                      alt={`Thumbnail ${idx + 1}`} 
+                      className="w-full h-full object-cover" 
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <h1 className="text-3xl font-bold text-gray-900 mb-2">{facility.name}</h1>
         <p className="text-gray-600 leading-relaxed text-lg border-b pb-6 mb-6">{facility.description}</p>
         
-        {extraItems.length > 0 && (
-          <div className="mb-8">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">
-              {isCustomMode ? 'Select your facilities' : 'Add Extras to your booking'}
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {extraItems.map(item => {
-                const isMiniHall = item.name.toLowerCase().includes('mini hall');
-                const isSoldOut = item.isAvailableForDates === false;
-                const isSelected = !!selectedExtras[item.id];
-                
-                // Determine Fixed Timing Text to display to the user below the item
-                let timingText = "08:00 AM - 11:00 PM (Full Day)";
-                if (item.facilityType === 'ROOM') timingText = "10:00 AM - 08:00 AM (Next Day)";
-                else if (isMiniHall) timingText = "06:00 PM - 11:00 PM (₹3000/extra hr)";
-                else if (item.pricingType === 'PER_ITEM') timingText = "Valid for duration of booking";
-
-                return (
-                  <div key={item.id} className={`border rounded-lg p-4 flex justify-between items-center transition shadow-sm ${isSoldOut ? 'bg-gray-100 opacity-60 cursor-not-allowed grayscale' : (isSelected ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-300' : 'bg-white hover:shadow-md hover:border-blue-200')}`}>
-                    
-                    <div className="flex items-start gap-3">
-                      <input 
-                        type="checkbox" 
-                        id={`facility-${item.id}`}
-                        checked={isSelected}
-                        onChange={(e) => handleCheckboxChange(item.id, e.target.checked)}
-                        disabled={isSoldOut}
-                        className="w-5 h-5 mt-1 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer disabled:cursor-not-allowed"
-                      />
-                      <div>
-                        <label htmlFor={`facility-${item.id}`} className={`font-semibold cursor-pointer ${isSoldOut ? 'text-gray-500 line-through' : (isMiniHall ? 'text-orange-800' : 'text-gray-800')}`}>
-                          {item.name} {isMiniHall && !isSoldOut && <span className="text-[10px] uppercase font-bold bg-orange-200 text-orange-800 px-2 py-0.5 rounded ml-2">Premium Add-on</span>}
-                        </label>
-                        <p className="text-sm text-gray-500">₹{parseInt(item.baseRate).toLocaleString('en-IN')} {item.pricingType === 'HOURLY' ? '/ hr' : ''}</p>
-                        
-                        {/* Display the Fixed Timing directly below the item name */}
-                        <p className={`text-xs mt-1 flex items-center gap-1 ${isSelected ? 'text-blue-700 font-semibold' : 'text-gray-500'}`}>
-                          <Clock size={12} /> {timingText}
-                        </p>
-
-                        {isSoldOut && <p className="text-xs font-bold text-red-600 mt-1">Booked for these dates</p>}
-                      </div>
-                    </div>
-                    
-                    {isSelected && item.pricingType === 'PER_ITEM' && (
-                      <div className="flex items-center gap-2 border rounded-md px-2 py-1 bg-white shadow-sm">
-                        <button onClick={() => handleQuantityChange(item.id, -1)} disabled={selectedExtras[item.id] <= 1} className="text-gray-500 hover:text-gray-800 disabled:opacity-30"><Minus size={14}/></button>
-                        <span className="font-bold w-4 text-center text-sm">{selectedExtras[item.id]}</span>
-                        <button onClick={() => handleQuantityChange(item.id, 1)} className="text-gray-500 hover:text-gray-800"><Plus size={14}/></button>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {!isCustomMode && extraItems.length === 0 && (
-           <div className="p-4 bg-blue-50 text-blue-800 rounded-lg flex items-start gap-3">
-              <Package className="shrink-0 mt-1" />
-              <div>
-                <h3 className="font-bold">Standard Package</h3>
-                <p className="text-sm mt-1">This is a fixed package. The items included cannot be customized or removed.</p>
-              </div>
-           </div>
-        )}
+        {isStaff && <StaffBookingForm customerData={customerData} setCustomerData={setCustomerData} />}
+        
+        <FacilityExtrasList 
+          extraItems={extraItems} 
+          selectedExtras={selectedExtras} 
+          isCustomMode={isCustomMode} 
+          handleCheckboxChange={handleCheckboxChange} 
+          handleQuantityChange={handleQuantityChange} 
+        />
       </div>
 
-      {/* Right Column: Booking Widget */}
       <div className="md:w-1/3 relative">
-        <div className="sticky top-28 bg-white border rounded-xl shadow-xl p-6">
-          <h3 className="text-xl font-bold mb-4 border-b pb-2">Price Summary</h3>
-          
-          {/* STRICTLY RELY ON BACKEND PRICING */}
-          {availability?.pricing ? (
-            <div className="flex flex-col mb-6 bg-gray-50 p-4 rounded-lg border">
-              <div className="flex justify-between items-center text-gray-600 mb-2">
-                <span className="text-sm">Calculated Base Amount:</span>
-                <span className="font-semibold">₹{Number(availability.pricing.baseCalculatedAmount).toLocaleString('en-IN')}</span>
-              </div>
-              <div className="flex justify-between items-center text-gray-600 mb-3 border-b border-gray-200 pb-3">
-                <span className="text-sm">Security Deposit (Refundable):</span>
-                <span className="font-semibold">₹{Number(availability.pricing.securityDepositRequired).toLocaleString('en-IN')}</span>
-              </div>
-              <div className="flex justify-between items-baseline gap-1 mt-1">
-                <span className="text-gray-800 font-bold">Total Required:</span>
-                <span className="text-3xl font-extrabold text-blue-700">₹{Number(availability.pricing.estimatedTotal).toLocaleString('en-IN')}</span>
-              </div>
-             
-            </div>
-          ) : (
-            <div className="flex flex-col mb-6 bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-               <div className="flex justify-between items-center text-gray-600 mb-2">
-                  <span className="text-sm">Starting from:</span>
-                  <span className="font-semibold">₹{facility?.baseRate ? parseInt(facility.baseRate).toLocaleString('en-IN') : '0'}/day</span>
-                </div>
-              <p className="text-sm text-yellow-800 mt-2 text-center">
-                Please select your dates and click <strong>"Check Availability"</strong> to see the exact pricing based on your selections.
-              </p>
-            </div>
-          )}
-          
-          <div className="border rounded-lg overflow-hidden mb-4 bg-gray-50">
-            {/* The Unified Date Picker */}
-            {needsEndDate ? (
-              <div className="flex border-b bg-white">
-                <div className="w-1/2 p-3 border-r">
-                  <label className="block text-xs font-bold text-gray-700 uppercase flex items-center gap-1">
-                    <Calendar size={14} /> Check-in Date
-                  </label>
-                  <input 
-                    type="date" value={startDate} 
-                    onChange={(e) => { setStartDate(e.target.value); setAvailability(null); setPartialAvailability(null); }} 
-                    min={new Date().toISOString().split('T')[0]} 
-                    className="w-full text-sm outline-none mt-2 bg-transparent cursor-pointer" 
-                  />
-                </div>
-                <div className="w-1/2 p-3">
-                  <label className="block text-xs font-bold text-gray-700 uppercase flex items-center gap-1">
-                    <Calendar size={14} /> Check-out Date
-                  </label>
-                  <input 
-                    type="date" value={endDate} 
-                    onChange={(e) => { setEndDate(e.target.value); setAvailability(null); setPartialAvailability(null); }} 
-                    min={startDate || new Date().toISOString().split('T')[0]} 
-                    className="w-full text-sm outline-none mt-2 bg-transparent cursor-pointer" 
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="p-3 border-b bg-white">
-                <label className="block text-xs font-bold text-gray-700 uppercase flex items-center gap-1">
-                  <Calendar size={14} /> Event Date
-                </label>
-                <input 
-                  type="date" value={startDate} 
-                  onChange={(e) => { setStartDate(e.target.value); setAvailability(null); setPartialAvailability(null); }} 
-                  min={new Date().toISOString().split('T')[0]} 
-                  className="w-full text-sm outline-none mt-2 bg-transparent cursor-pointer" 
-                />
-              </div>
-            )}
-
-            {/* --- TIMING INFO & SELECTORS --- */}
-            {isCustomMode ? (
-              <div className="p-3 border-b bg-indigo-50 text-indigo-800 text-xs">
-                <Clock size={14} className="inline mr-1 mb-0.5" />
-                <strong>Timing is locked based on selected items.</strong><br/>
-                {hasRoom ? "10:00 AM to 08:00 AM (Next Day)" : isOnlyMiniHall ? "06:00 PM to 11:00 PM" : "08:00 AM to 11:00 PM"}
-              </div>
-            ) : (
-              <>
-                {facility.pricingType === 'TIERED' && (
-                  <div className="p-3 border-b bg-white">
-                    <label className="block text-xs font-bold text-gray-700 uppercase mb-2">Duration</label>
-                    <select value={bookingOption} onChange={e => { setBookingOption(e.target.value); setAvailability(null); setPartialAvailability(null); }} className="w-full text-sm outline-none bg-transparent">
-                      <option value="">-- Select Duration --</option>
-                      <option value="1_day">1 Day (10:00 AM - Next Day 10:00 AM)</option>
-                      <option value="2_days">2 Days (10:00 AM - Day 3 10:00 AM)</option>
-                      <option value="3_days">3 Days (10:00 AM - Day 4 10:00 AM)</option>
-                    </select>
-                  </div>
-                )}
-
-                {facility.pricingType === 'SLOT' && facility.pricingDetails?.half_day && (
-                  <div className="p-3 border-b bg-white">
-                    <label className="block text-xs font-bold text-gray-700 uppercase mb-2">Time Slot</label>
-                    <select value={bookingOption} onChange={e => { setBookingOption(e.target.value); setAvailability(null); setPartialAvailability(null); }} className="w-full text-sm outline-none bg-transparent">
-                      <option value="">-- Select Time Slot --</option>
-                      <option value="morning">Morning Half-Day (08:00 AM - 04:00 PM)</option>
-                      <option value="evening">Evening Half-Day (04:00 PM - 11:00 PM)</option>
-                      <option value="full">Full Day (08:00 AM - 11:00 PM)</option>
-                    </select>
-                  </div>
-                )}
-
-                {facility.pricingType === 'SLOT' && facility.pricingDetails?.duration_hours && (
-                  <div className="p-3 border-b bg-white">
-                    <label className="block text-xs font-bold text-gray-700 uppercase mb-2">Time Slot (6 Hours)</label>
-                    <select value={bookingOption} onChange={e => { setBookingOption(e.target.value); setAvailability(null); setPartialAvailability(null); }} className="w-full text-sm outline-none bg-transparent">
-                      <option value="">-- Select Time Slot --</option>
-                      <option value="morning">Morning Slot (10:00 AM - 04:00 PM)</option>
-                      <option value="evening">Evening Slot (05:00 PM - 11:00 PM)</option>
-                    </select>
-                  </div>
-                )}
-
-                {(facility.pricingType === 'FIXED' || facility.pricingType === 'HOURLY' || facility.facilityType === 'ROOM') && (
-                  <div className="p-3 border-b bg-indigo-50 text-indigo-800 text-xs">
-                    <Clock size={14} className="inline mr-1 mb-0.5" />
-                    <strong>Timing: </strong> 
-                    {facility.facilityType === 'ROOM' ? "10:00 AM - 08:00 AM (Next Day)" : 
-                     facility.pricingType === 'HOURLY' ? "06:00 PM - 11:00 PM (Evening Slot)" : 
-                     "08:00 AM – 08:00 AM (Next Day)"}
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* Display Final Calculated Times for confirmation */}
-            {formData.startTime && formData.endTime && (
-              <div className="p-3 bg-gray-100 border-b text-xs text-gray-600">
-                <p><strong>Overall Check-in:</strong> {new Date(formData.startTime).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short'})}</p>
-                <p><strong>Overall Check-out:</strong> {new Date(formData.endTime).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short'})}</p>
-              </div>
-            )}
-
-            {/* Guest Count & Event Type */}
-            <div className="flex border-b bg-white">
-                <div className="w-1/2 p-3 border-r">
-                    <label className="block text-xs font-bold text-gray-700 uppercase">Guests</label>
-                    <input type="number" min="1" name="guestCount" value={formData.guestCount} onChange={handleChange} className="w-full text-sm outline-none mt-1 bg-transparent" />
-                </div>
-                <div className="w-1/2 p-3">
-                    <label className="block text-xs font-bold text-gray-700 uppercase">Event Type</label>
-                    <select name="eventType" value={formData.eventType} onChange={handleChange} className="w-full text-sm outline-none mt-1 bg-transparent">
-                        <option value="Marriage">Marriage</option>
-                        <option value="Meeting">Meeting / Conference</option>
-                        <option value="Other">Other</option>
-                    </select>
-                </div>
-            </div>
-          </div>
-
-          {/* Submission / Availability Buttons */}
-          {partialAvailability ? (
-            <div className="space-y-4">
-              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <div className="flex gap-2 items-start mb-2">
-                  <AlertTriangle size={20} className="text-yellow-600 shrink-0" />
-                  <h3 className="font-bold text-yellow-800 text-sm">Partially Booked!</h3>
-                </div>
-                <p className="text-xs text-yellow-700 mb-3">{partialAvailability.message}</p>
-                <p className="text-xs text-red-800 font-semibold mb-1 border-t border-yellow-200 pt-2">Already Booked:</p>
-                <ul className="text-xs text-red-600 list-disc pl-4 mb-3">
-                  {partialAvailability.unavailableComponents?.map((item, i) => <li key={i}>{item}</li>)}
-                </ul>
-                <p className="text-xs text-green-800 font-semibold mb-1 border-t border-yellow-200 pt-2">What you get:</p>
-                <ul className="text-xs text-green-700 list-disc pl-4 mb-3">
-                  {partialAvailability.availableAlternatives?.map((item, i) => <li key={i}>{item.name}</li>)}
-                </ul>
-              </div>
-              <button onClick={() => handleBookNow(true)} disabled={isSubmitting} className="w-full py-3 rounded-lg text-white font-semibold bg-yellow-600 hover:bg-yellow-700 disabled:opacity-50">
-                {isSubmitting ? 'Submitting...' : 'Book Remaining Spaces'}
-              </button>
-            </div>
-          ) 
-          
-          : availability?.isAvailable ? (
-            <div className="space-y-4">
-              <div className="p-3 bg-green-50 text-green-700 rounded-md flex items-center gap-2 mb-2">
-                <CheckCircle size={18}/> <span className="font-semibold text-sm">Dates are available!</span>
-              </div>
-              <button onClick={() => handleBookNow(false)} disabled={isSubmitting} className="w-full py-3 rounded-lg text-white font-semibold bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-700 transition disabled:opacity-50">
-                {isSubmitting ? 'Submitting...' : 'Request to Book'}
-              </button>
-            <div className="pt-4 border-t space-y-2 text-sm text-gray-700">
-                <div className="flex justify-between font-bold">
-                  <span>Total Required (Inc. Deposit)</span>
-                  <span className="text-lg">
-                    ₹{availability?.pricing?.estimatedTotal ? Number(availability.pricing.estimatedTotal).toLocaleString('en-IN') : "0"}
-                  </span>
-                </div>
-              </div>
-            </div>
-          ) 
-          
-          : (
-            <>
-              <button onClick={handleCheckAvailability} disabled={isChecking} className="w-full py-3 rounded-lg text-white font-semibold bg-red-600 hover:bg-red-700 disabled:opacity-50">
-                {isChecking ? 'Checking...' : 'Check Availability'}
-              </button>
-              
-              {availability && !availability.isAvailable && !partialAvailability && (
-                <div className="mt-4 p-3 bg-red-50 text-red-700 text-sm rounded-md flex items-start gap-2">
-                  <Info size={16} className="mt-0.5 shrink-0" />
-                  <p>{availability.message || 'These dates are completely booked.'}</p>
-                </div>
-              )}
-            </>
-          )}
-        </div>
+        <BookingWidget 
+          facility={facility} availability={availability} partialAvailability={partialAvailability} 
+          isCustomMode={isCustomMode} needsEndDate={needsEndDate} hasRoom={hasRoom} isOnlyMiniHall={isOnlyMiniHall}
+          startDate={startDate} setStartDate={safeSetStartDate} 
+          endDate={endDate} setEndDate={safeSetEndDate} 
+          bookingOption={bookingOption} setBookingOption={safeSetBookingOption}
+          formData={formData} handleChange={handleChange} 
+          handleCheckAvailability={handleCheckAvailability} handleBookNow={handleBookNow} 
+          isChecking={isChecking} isSubmitting={isSubmitting} isStaff={isStaff}
+        />
       </div>
     </div>
   );

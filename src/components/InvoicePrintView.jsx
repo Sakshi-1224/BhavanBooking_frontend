@@ -110,9 +110,9 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
         {/* TALLY STYLE INVOICE BODY */}
         <div id="printable-invoice-area" className="p-4 text-[12px] text-black leading-tight m-4 print:m-0">
           
-          <div className="text-center font-bold text-lg mb-1 tracking-wider uppercase">
-            Tax Invoice
-          </div>
+        <div className="text-center font-bold text-lg mb-1 tracking-wider uppercase">
+  {invoice.invoiceType === 'DONATION' ? 'Donation Receipt' : 'Tax Invoice'}
+</div>
 
           <div className="border border-black flex flex-col">
             
@@ -202,8 +202,8 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
                     
                     {discount > 0 && <p className="font-bold text-[11px] text-gray-800 mt-2 uppercase">- DISCOUNT APPLIED</p>}
                   </td>
-                  <td className="border-r border-black p-1 text-center">9963</td>
-                  <td className="border-r border-black p-1 text-center">5%</td>
+                <td className="border-r border-black p-1 text-center">{invoice.invoiceType === 'DONATION' ? 'N/A' : '9963'}</td>
+<td className="border-r border-black p-1 text-center">{invoice.invoiceType === 'DONATION' ? '0%' : '5%'}</td>
                   <td className="border-r border-black p-1 text-center"></td>
                   <td className="border-r border-black p-1 text-right"></td>
                   <td className="border-r border-black p-1 text-right">{taxableAmount.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
@@ -288,14 +288,14 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
                </thead>
                <tbody>
                   <tr>
-                     <td className="border-r border-black p-1">9963</td>
-                     <td className="border-r border-black p-1 text-right pr-2">{taxableAmount.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
-                     <td className="border-r border-black p-1">2.5%</td>
-                     <td className="border-r border-black p-1 text-right pr-2">{cgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
-                     <td className="border-r border-black p-1">2.5%</td>
-                     <td className="border-r border-black p-1 text-right pr-2">{sgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
-                     <td className="p-1 text-right pr-2">{totalTax.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
-                  </tr>
+   <td className="border-r border-black p-1">{invoice.invoiceType === 'DONATION' ? 'N/A' : '9963'}</td>
+   <td className="border-r border-black p-1 text-right pr-2">{taxableAmount.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+   <td className="border-r border-black p-1">{invoice.invoiceType === 'DONATION' ? '0%' : '2.5%'}</td>
+   <td className="border-r border-black p-1 text-right pr-2">{cgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+   <td className="border-r border-black p-1">{invoice.invoiceType === 'DONATION' ? '0%' : '2.5%'}</td>
+   <td className="border-r border-black p-1 text-right pr-2">{sgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+   <td className="p-1 text-right pr-2">{totalTax.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+</tr>
                   <tr className="border-t border-black font-bold">
                      <td className="border-r border-black p-1 text-right pr-2">Total</td>
                      <td className="border-r border-black p-1 text-right pr-2">{taxableAmount.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
