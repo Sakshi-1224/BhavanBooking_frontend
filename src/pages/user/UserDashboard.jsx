@@ -7,6 +7,8 @@ import { loadRazorpayScript } from '../../utils/loadRazorpay';
 import { FileText } from 'lucide-react';
 import InvoicePrintView from '../../components/InvoicePrintView';
 
+import CancelBookingModal from '../../components/booking/CancelBookingModal'; // Adjust path if needed
+
 // Helper to format dates nicely
 const formatDate = (dateString) => {
   const options = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
@@ -33,6 +35,8 @@ const StatusBadge = ({ status }) => {
     CANCELLED: 'Cancelled',
   };
 
+  
+
   return (
     <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${styles[status] || styles.CANCELLED}`}>
       {labels[status] || status}
@@ -44,7 +48,7 @@ export default function UserDashboard() {
   const [printModal, setPrintModal] = useState(null);
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
-  
+  const [bookingToCancel, setBookingToCancel] = useState(null);
   // Track which specific booking payment is currently loading
   const [processingPaymentId, setProcessingPaymentId] = useState(null); 
   
@@ -251,6 +255,7 @@ export default function UserDashboard() {
                     );
                   })()}
                 </div>
+
                 
 {booking.status === 'REJECTED' && (
   <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 p-3 rounded-md mt-4">
@@ -273,7 +278,8 @@ export default function UserDashboard() {
                   </button>
                 )}
 
-                {booking.status === 'CONFIRMED' && booking.financials.paymentStatus === 'PARTIAL' && (
+
+                 {booking.status === 'CONFIRMED' && booking.financials.paymentStatus === 'PARTIAL' && (
                   <button 
                     onClick={() => handlePayment(booking.id, 'REMAINING')}
                     disabled={processingPaymentId === booking.id}
@@ -286,6 +292,20 @@ export default function UserDashboard() {
                     )}
                   </button>
                 )}
+
+<div className="mt-2 border-t pt-1">
+  </div>
+                {/* CANCEL BUTTON - Only show if not already cancelled/rejected/checked-in and time hasn't passed */}
+{/* CANCEL BUTTON - Only show if advance is paid (status is CONFIRMED) and time hasn't passed */}
+{booking.status === 'CONFIRMED' && new Date(booking.schedule.startTime) > new Date() && (
+  <button 
+    onClick={() => setBookingToCancel(booking)}
+    className="w-full mt-3 flex items-center justify-center gap-2 py-2 px-4 border-2 border-red-500 text-red-600 rounded-lg font-semibold hover:bg-red-50 transition shadow-sm"
+  >
+    <AlertCircle size={18} /> Cancel Booking
+  </button>
+)}
+               
 
                 {(booking.status === 'PENDING_CLERK_REVIEW' || booking.status === 'PENDING_ADMIN_APPROVAL') && (
                   <div className="flex items-center gap-2 text-sm text-yellow-700 bg-yellow-50 p-3 rounded-md">
@@ -313,6 +333,7 @@ export default function UserDashboard() {
     }} 
     className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded text-xs transition flex items-center gap-1 shadow-sm mt-2"
   >
+    
     <FileText size={14}/> View / Print Bill
   </button>
 )}
@@ -330,6 +351,12 @@ export default function UserDashboard() {
           onClose={() => setPrintModal(null)} 
         />
       )}
+      <CancelBookingModal 
+        isOpen={!!bookingToCancel} 
+        booking={bookingToCancel} 
+        onClose={() => setBookingToCancel(null)} 
+        onSuccess={fetchMyBookings} 
+      />
     </div>
   );
 }
