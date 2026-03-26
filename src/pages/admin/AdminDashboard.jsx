@@ -8,6 +8,7 @@ import CreateClerk from './CreateClerk';
 import InvoicePrintView from '../../components/InvoicePrintView';
 import AdminProfileModal from './AdminProfileModal'; 
 import ReportsView from './ReportsView';
+import AdminFacilitiesView from './AdminFacilitiesView';
 
 const formatDate = (dateString) => {
   if (!dateString) return 'N/A';
@@ -184,6 +185,12 @@ export default function AdminDashboard() {
             <button onClick={() => setActiveTab('ALL')} className={`px-4 py-2 text-sm font-medium rounded-md transition whitespace-nowrap ${activeTab === 'ALL' ? 'bg-gray-200 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>All Bookings</button>
             <button onClick={() => setActiveTab('STAFF')} className={`px-4 py-2 text-sm font-medium rounded-md transition whitespace-nowrap ${activeTab === 'STAFF' ? 'bg-blue-100 text-blue-800' : 'text-gray-600 hover:bg-gray-50'}`}>Staff</button>
             <button onClick={() => setActiveTab('REPORTS')} className={`px-4 py-2 text-sm font-medium rounded-md transition whitespace-nowrap ${activeTab === 'REPORTS' ? 'bg-indigo-100 text-indigo-800' : 'text-gray-600 hover:bg-gray-50'}`}>Reports & Analytics</button>
+            <button 
+  onClick={() => setActiveTab('FACILITIES')} 
+  className={`px-4 py-2 text-sm font-medium rounded-md transition whitespace-nowrap ${activeTab === 'FACILITIES' ? 'bg-purple-100 text-purple-800' : 'text-gray-600 hover:bg-gray-50'}`}
+>
+  Manage Facilities
+</button>
           </div>
         </div>
 
@@ -191,7 +198,9 @@ export default function AdminDashboard() {
           <CreateClerk />
         ) : activeTab === 'REPORTS' ? (
           <ReportsView />
-        ) : (
+        ) : activeTab === 'FACILITIES' ? (
+  <AdminFacilitiesView />  
+): (
           <div className="bg-white shadow-sm rounded-lg border overflow-hidden">
              <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
@@ -440,9 +449,17 @@ export default function AdminDashboard() {
                   const extras = Number(inv.totalAdditionalAmount) || 0;
                   const discount = Number(inv.discountAmount) || 0;
                   const taxable = base + extras - discount;
-                  const taxes = Number(inv.cgstAmount || 0) + Number(inv.sgstAmount || 0);
-                  const totalInvoiceAmount = Number(inv.totalAmount) || 0;
-                  
+
+                  const cgst = Number(inv.cgstAmount || 0);
+const sgst = Number(inv.sgstAmount || 0);
+const taxes = cgst + sgst;
+
+               const cgstRate = taxable > 0 ? Number(((cgst / taxable) * 100).toFixed(2)) : 0;
+const sgstRate = taxable > 0 ? Number(((sgst / taxable) * 100).toFixed(2)) : 0;
+const totalGstRate = cgstRate + sgstRate;
+
+const totalInvoiceAmount = Number(inv.totalAmount) || 0;
+
                   const utilities = Number(inv.electricityCharges || 0) + Number(inv.cleaningCharges || 0) + Number(inv.generatorCharges || 0);
                   const penalties = inv.damagesAndPenalties?.reduce((sum, p) => sum + Number(p.amount), 0) || 0;
                   const totalDeductions = Number(inv.totalDeductions) || 0;
@@ -463,7 +480,7 @@ export default function AdminDashboard() {
                           {discount > 0 && <div className="flex justify-between text-green-400 font-bold"><span>Discount Applied:</span><span>- ₹{discount.toLocaleString('en-IN')}</span></div>}
                           
                           <div className="flex justify-between font-semibold text-white pt-2 border-t border-gray-700 mt-2"><span>Total Taxable Amount:</span><span>₹{taxable.toLocaleString('en-IN')}</span></div>
-                          <div className="flex justify-between"><span>Taxes (5% GST):</span><span>+ ₹{taxes.toLocaleString('en-IN')}</span></div>
+                          <div className="flex justify-between"><span>Taxes ({totalGstRate}% GST):</span><span>+ ₹{taxes.toLocaleString('en-IN')}</span></div>
                           
                           <div className="border-t border-gray-700 my-4"></div>
                           

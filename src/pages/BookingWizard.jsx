@@ -4,7 +4,7 @@ import api from '../api/axios';
 import { toast } from 'react-toastify';
 import useAuthStore from '../store/useAuthStore';
 
-// Import our new components
+// Import our components
 import StaffBookingForm from '../components/booking/StaffBookingForm';
 import FacilityExtrasList from '../components/booking/FacilityExtrasList';
 import BookingWidget from '../components/booking/BookingWidget';
@@ -30,9 +30,11 @@ export default function BookingWizard() {
   // State for Image Gallery
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   
+  // Booking Selection State
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [bookingOption, setBookingOption] = useState(''); 
+  const [bookingOption, setBookingOption] = useState(''); // Used for TIERED (e.g., "1", "2" days)
+  const [selectedSlot, setSelectedSlot] = useState(null); // Used for dynamic FIXED slots
 
   const [formData, setFormData] = useState({ startTime: '', endTime: '', guestCount: 1, eventType: 'Marriage' });
   const [customerData, setCustomerData] = useState({ fullName: '', email: '', mobile: '', address: '' });
@@ -51,15 +53,22 @@ export default function BookingWizard() {
         if (isCustomMode) {
           setFacility({
             id: 'custom', name: 'Build Your Custom Booking',
-            description: 'Select the specific facilities you need. Timings are fixed automatically as per management rules.',
+            description: 'Select the specific facilities you need.',
             baseRate: 0, pricingType: 'MIXED'
           });
           const customOptions = facilities.filter(f => f.facilityType !== 'PACKAGE' && f.facilityType !== 'COMPLEX');
           setExtraItems(customOptions.map(item => ({ ...item, isAvailableForDates: true })));
         } else {
           const found = facilities.find(f => f.id === facilityId);
-          if (found) setFacility(found);
-          else toast.error('Facility not found');
+          if (found) {
+            // Ensure pricingDetails is an object (in case it comes as a string)
+            if (typeof found.pricingDetails === 'string') {
+              found.pricingDetails = JSON.parse(found.pricingDetails);
+            }
+            setFacility(found);
+          } else {
+            toast.error('Facility not found');
+          }
           
           let extras = [];
           if (found?.name?.toLowerCase().includes('complete bhavan')) {
@@ -84,55 +93,97 @@ export default function BookingWizard() {
   }
 
   let needsEndDate = false;
-  if (isCustomMode) { needsEndDate = Object.keys(selectedExtras).length > 0 && !isOnlyMiniHall; } 
-  else if (facility) { if (facility.pricingType === 'FIXED' || facility.facilityType === 'ROOM') needsEndDate = true; }
+  if (isCustomMode) { 
+    needsEndDate = Object.keys(selectedExtras).length > 0 && !isOnlyMiniHall; 
+  } else if (facility) { 
+    if (facility.pricingType === 'FIXED' || facility.facilityType === 'ROOM' || facility.pricingType === 'HOURLY') {
+      needsEndDate = true; 
+    }
+  }
 
+  // -----------------------------------------------------------------------------------
+  // 🚀 THE DYNAMIC TIME CALCULATION ENGINE (REMOVED ALL HARDCODED "MORNING/EVENING")
+  // -----------------------------------------------------------------------------------
   useEffect(() => {
     if (!startDate || !facility) return;
-    const start = new Date(startDate);
-    let end = new Date(startDate);
+    
+    let finalStart = null;
+    let finalEnd = null;
     let isValid = false;
 
-    if (needsEndDate) {
-      if (!endDate) { setFormData(prev => ({ ...prev, startTime: '', endTime: '' })); return; }
-      end = new Date(endDate);
-      if (isCustomMode) {
-          if (hasRoom) { start.setHours(10, 0); end.setHours(8, 0); } else { start.setHours(8, 0); end.setHours(8, 0); }
-          isValid = true;
-      } else {
-          if (facility.facilityType === 'ROOM') { start.setHours(10, 0); end.setHours(8, 0); } else { start.setHours(8, 0); end.setHours(8, 0); }
-          isValid = true;
+    // Helper: Safely parse date and time string to Date object
+    const createDate = (dateStr, timeStr) => new Date(`${dateStr.split('T')[0]}T${timeStr}:00`);
+
+    if (isCustomMode) {
+      // Standard rule for Custom/Rooms: Need both start and end date
+      if (startDate && endDate) {
+        finalStart = new Date(startDate);
+        finalEnd = new Date(endDate);
+        if (hasRoom) { finalStart.setHours(10, 0); finalEnd.setHours(8, 0); }
+        else if (isOnlyMiniHall) { finalStart.setHours(18, 0); finalEnd.setHours(23, 0); }
+        else { finalStart.setHours(8, 0); finalEnd.setHours(8, 0); }
+        isValid = true;
       }
     } else {
-      if (isCustomMode && isOnlyMiniHall) { start.setHours(18, 0); end.setHours(23, 0); isValid = true; } 
-      else if (!isCustomMode) {
-          if (facility.pricingType === 'TIERED') {
-            if (bookingOption === '1_day') { start.setHours(10, 0); end.setDate(end.getDate() + 1); end.setHours(10, 0); isValid = true; }
-            else if (bookingOption === '2_days') { start.setHours(10, 0); end.setDate(end.getDate() + 2); end.setHours(10, 0); isValid = true; }
-            else if (bookingOption === '3_days') { start.setHours(10, 0); end.setDate(end.getDate() + 3); end.setHours(10, 0); isValid = true; }
-          } 
-          else if (facility.pricingType === 'SLOT' && facility.pricingDetails?.half_day) {
-            if (bookingOption === 'morning') { start.setHours(8, 0); end.setHours(16, 0); isValid = true; }
-            else if (bookingOption === 'evening') { start.setHours(16, 0); end.setHours(23, 0); isValid = true; }
-            else if (bookingOption === 'full') { start.setHours(8, 0); end.setHours(23, 0); isValid = true; }
+      // DYNAMIC BACKEND LOGIC BASED ON PRICING TYPE
+      if (facility.pricingType === 'SLOT') {
+        
+        if (facility.pricingDetails?.slotType === 'FIXED') {
+          // Admin defined exact shifts (e.g., "08:00 to 15:00")
+          if (selectedSlot && startDate) {
+            finalStart = createDate(startDate, selectedSlot.startTime);
+            finalEnd = createDate(startDate, selectedSlot.endTime);
+            isValid = true;
           }
-          else if (facility.pricingType === 'SLOT' && facility.pricingDetails?.duration_hours) {
-            const dur = facility.pricingDetails.duration_hours;
-            if (bookingOption === 'morning') { start.setHours(10, 0); end.setHours(10 + dur, 0); isValid = true; }
-            else if (bookingOption === 'evening') { start.setHours(17, 0); end.setHours(17 + dur, 0); isValid = true; }
+        } 
+        else if (facility.pricingDetails?.slotType === 'FLEXIBLE') {
+          // Admin defined exact duration (e.g., 6 hours)
+          if (startDate) {
+            const duration = Number(facility.pricingDetails.durationHours) || 1;
+            finalStart = new Date(startDate);
+            finalEnd = new Date(startDate);
+            finalEnd.setHours(finalEnd.getHours() + duration);
+            isValid = true;
           }
-          else if (facility.pricingType === 'HOURLY') { start.setHours(18, 0); end.setHours(23, 0); isValid = true; }
+        }
+
+      } else if (facility.pricingType === 'TIERED') {
+        // Based on number of days selected
+        if (startDate && bookingOption) {
+          const days = parseInt(bookingOption.split('_')[0]) || 1;
+          finalStart = new Date(startDate);
+          finalEnd = new Date(startDate);
+          finalEnd.setDate(finalEnd.getDate() + days);
+          isValid = true;
+        }
+
+      } else if (facility.pricingType === 'HOURLY' || facility.pricingType === 'FIXED' || facility.facilityType === 'ROOM') {
+        if (startDate && endDate) {
+          finalStart = new Date(startDate);
+          finalEnd = new Date(endDate);
+          isValid = true;
+        }
       }
     }
 
-    if (isValid) {
-      if (end <= start) {
-         toast.error("Check-out must be after check-in.");
-         setFormData(prev => ({ ...prev, startTime: '', endTime: '' })); return;
+    // Apply the valid dates to the Form Payload
+    if (isValid && finalStart && finalEnd) {
+      if (finalEnd <= finalStart) {
+         toast.error("Check-out time must be after check-in time.");
+         setFormData(prev => ({ ...prev, startTime: '', endTime: '' })); 
+         return;
       }
-      setFormData(prev => ({ ...prev, startTime: toLocalISOString(start), endTime: toLocalISOString(end) }));
-    } else { setFormData(prev => ({ ...prev, startTime: '', endTime: '' })); }
-  }, [startDate, endDate, bookingOption, facility, isCustomMode, needsEndDate, hasRoom, isOnlyMiniHall]);
+      setFormData(prev => ({ 
+        ...prev, 
+        startTime: toLocalISOString(finalStart), 
+        endTime: toLocalISOString(finalEnd) 
+      }));
+    } else { 
+      setFormData(prev => ({ ...prev, startTime: '', endTime: '' })); 
+    }
+  }, [startDate, endDate, bookingOption, selectedSlot, facility, isCustomMode, needsEndDate, hasRoom, isOnlyMiniHall]);
+  // -----------------------------------------------------------------------------------
+
 
   useEffect(() => {
     const checkItemAvailability = async () => {
@@ -182,7 +233,8 @@ export default function BookingWizard() {
     setAvailability(null); setPartialAvailability(null);
   };
 
-  const safeSetStartDate = (val) => { setStartDate(val); setAvailability(null); setPartialAvailability(null); };
+  // Safe resetters
+  const safeSetStartDate = (val) => { setStartDate(val); setSelectedSlot(null); setAvailability(null); setPartialAvailability(null); };
   const safeSetEndDate = (val) => { setEndDate(val); setAvailability(null); setPartialAvailability(null); };
   const safeSetBookingOption = (val) => { setBookingOption(val); setAvailability(null); setPartialAvailability(null); };
 
@@ -240,7 +292,7 @@ export default function BookingWizard() {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col md:flex-row gap-12">
       <div className="md:w-2/3">
         
-        {/* --- MAIN FACILITY INTERACTIVE IMAGE GALLERY --- */}
+        {/* IMAGE GALLERY */}
         {!isCustomMode && Array.isArray(facility.images) && facility.images.length > 0 && (
           <div className="mb-6">
             <div className="rounded-2xl overflow-hidden shadow-md h-64 sm:h-96 relative group bg-gray-100 mb-3">
@@ -271,12 +323,7 @@ export default function BookingWizard() {
                         : 'border-transparent opacity-60 hover:opacity-100'
                     }`}
                   >
-                    <img 
-                      src={img} 
-                      alt={`Thumbnail ${idx + 1}`} 
-                      className="w-full h-full object-cover" 
-                      onError={(e) => { e.target.style.display = 'none'; }}
-                    />
+                    <img src={img} alt={`Thumbnail ${idx + 1}`} className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }}/>
                   </button>
                 ))}
               </div>
@@ -302,9 +349,13 @@ export default function BookingWizard() {
         <BookingWidget 
           facility={facility} availability={availability} partialAvailability={partialAvailability} 
           isCustomMode={isCustomMode} needsEndDate={needsEndDate} hasRoom={hasRoom} isOnlyMiniHall={isOnlyMiniHall}
+          
           startDate={startDate} setStartDate={safeSetStartDate} 
           endDate={endDate} setEndDate={safeSetEndDate} 
+          
           bookingOption={bookingOption} setBookingOption={safeSetBookingOption}
+          selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot} // PASSING NEW DYNAMIC STATE
+          
           formData={formData} handleChange={handleChange} 
           handleCheckAvailability={handleCheckAvailability} handleBookNow={handleBookNow} 
           isChecking={isChecking} isSubmitting={isSubmitting} isStaff={isStaff}

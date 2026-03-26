@@ -25,7 +25,7 @@ export default function CreateClerk() {
       <form className="space-y-4" onSubmit={handleSubmit}>
         <input type="text" name="fullName" value={formData.fullName} placeholder="Clerk Name" required onChange={handleChange} className="w-full px-3 py-2 border rounded-md" />
         <input type="text" name="mobile" value={formData.mobile} placeholder="Mobile Number" required pattern="[0-9]{10}" onChange={handleChange} className="w-full px-3 py-2 border rounded-md" />
-        <input type="email" name="email" value={formData.email} placeholder="Email (Optional)" onChange={handleChange} className="w-full px-3 py-2 border rounded-md" />
+        <input type="email" name="email" value={formData.email} placeholder="Email" onChange={handleChange} className="w-full px-3 py-2 border rounded-md" />
         <input type="text" name="password" value={formData.password} placeholder="Temporary Password" required onChange={handleChange} className="w-full px-3 py-2 border rounded-md" />
         <button type="submit" className="w-full py-2 text-white bg-red-600 rounded-md hover:bg-red-700">Create Clerk Account</button>
       </form>

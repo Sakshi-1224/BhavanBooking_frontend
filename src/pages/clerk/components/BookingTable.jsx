@@ -36,6 +36,13 @@ export default function BookingTable({ bookings, isProcessing, handleVerify, ope
             const total = Number(financials.calculatedAmount) + Number(financials.securityDeposit);
             const paid = financials.paymentStatus === 'COMPLETED' ? total : (financials.paymentStatus === 'PARTIAL' ? Number(financials.advanceAmountRequested) : 0);
 
+            // --- DATE LOCK LOGIC ---
+            const checkInDate = new Date(schedule.startTime);
+            const today = new Date();
+            checkInDate.setHours(0,0,0,0);
+            today.setHours(0,0,0,0);
+            const isCheckInDay = today >= checkInDate;
+
             return(
               <tr key={booking.id} className="hover:bg-gray-50 transition">
                 <td className="p-4 text-gray-900 font-mono text-xs">{booking.id.substring(0, 8).toUpperCase()}</td>
@@ -58,31 +65,84 @@ export default function BookingTable({ bookings, isProcessing, handleVerify, ope
                     {booking.status.replace(/_/g, ' ')}
                   </span>
                 </td>
-                <td className="p-4 flex flex-wrap gap-2">
-                  {booking.verification?.aadharImageUrl && (
-                    <button onClick={() => setViewIdModal(booking.verification.aadharImageUrl)} className="bg-gray-600 hover:bg-gray-700 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1 shadow-sm transition">
-                      <Eye size={14}/> View ID
-                    </button>
-                  )}
-                  {booking.status === 'PENDING_CLERK_REVIEW' && (
-                    <button onClick={() => handleVerify(booking.id)} disabled={isProcessing === booking.id} className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-xs transition">Verify</button>
-                  )}
-                  {booking.status === 'PENDING_ADVANCE_PAYMENT' && (
-                    <button onClick={() => openModal('recordAdvance', booking)} className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded text-xs transition shadow-sm">
-                      Record Cash Advance
-                    </button>
-                  )}
-                  {booking.status === 'CONFIRMED' && (
-                    <button onClick={() => openModal('checkin', booking)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1 shadow-sm transition">
-                      <LogIn size={14}/> Check-In
-                    </button>
-                  )}
-                  {booking.status === 'CHECKED_IN' && (
-                    <button onClick={() => openModal('checkout', booking)} className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1"><LogOutIcon size={14}/> Check-Out</button>
-                  )}
-                  {booking.status === 'CHECKED_OUT' && (
-                    <button onClick={() => onFetchInvoice(booking)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1"><FileText size={14}/> View Bill</button>
-                  )}
+                
+                {/* ACTION COLUMN */}
+                <td className="p-4">
+                  <div className="flex flex-col gap-2">
+                    
+                    {/* STANDARD WORKFLOW BUTTONS */}
+                    <div className="flex flex-wrap gap-2">
+                      {booking.status === 'PENDING_CLERK_REVIEW' && (
+                        <button onClick={() => handleVerify(booking.id)} disabled={isProcessing === booking.id} className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-xs transition">Verify</button>
+                      )}
+                      
+                      {booking.status === 'PENDING_ADVANCE_PAYMENT' && (
+                        <button onClick={() => openModal('recordAdvance', booking)} className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded text-xs transition shadow-sm">
+                          Record Cash Advance
+                        </button>
+                      )}
+                      
+                      {booking.status === 'CHECKED_IN' && (
+                        <button onClick={() => openModal('checkout', booking)} className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1"><LogOutIcon size={14}/> Check-Out</button>
+                      )}
+                      
+                      {booking.status === 'CHECKED_OUT' && (
+                        <button onClick={() => onFetchInvoice(booking)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1"><FileText size={14}/> View Bill</button>
+                      )}
+                    </div>
+
+                    {/* --- CONFIRMED BOOKING ACTIONS (Payment & Check-in) --- */}
+                    {booking.status === 'CONFIRMED' && (
+                      <div className="flex flex-col gap-2">
+                        
+                        {/* 1. Collect Remaining Cash (Available Anytime) */}
+                        {financials.paymentStatus === 'PARTIAL' && (
+                          <button 
+                            onClick={() => openModal('recordRemaining', booking)} 
+                            className="bg-yellow-100 hover:bg-yellow-200 text-yellow-800 font-bold px-3 py-2 rounded text-xs transition border border-yellow-300 w-full text-center"
+                          >
+                            Collect Remaining Cash
+                          </button>
+                        )}
+
+                        {/* 2. Check-In (Date Locked) */}
+                        {isCheckInDay ? (
+                          <button 
+                            onClick={() => openModal('checkin', booking)} 
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-xs flex items-center justify-center gap-1 shadow-sm transition w-full"
+                          >
+                            <LogIn size={14}/> Check-In Guest
+                          </button>
+                        ) : (
+                          <span className="text-xs text-gray-500 font-semibold italic bg-gray-50 px-2 py-1.5 rounded border text-center w-full block">
+                            Check-in unlocks on {new Date(schedule.startTime).toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* KYC VIEW BUTTONS */}
+                    {booking.verification?.aadharFrontImageUrl && (
+                      <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-gray-100">
+                        <button 
+                          onClick={() => setViewIdModal(booking.verification.aadharFrontImageUrl)}
+                          className="flex-1 text-[11px] bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold px-2 py-1.5 rounded border border-blue-200 flex items-center justify-center gap-1 transition"
+                        >
+                          <Eye size={12} /> Front ID
+                        </button>
+                        
+                        {booking.verification?.aadharBackImageUrl && (
+                          <button 
+                            onClick={() => setViewIdModal(booking.verification.aadharBackImageUrl)}
+                            className="flex-1 text-[11px] bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold px-2 py-1.5 rounded border border-blue-200 flex items-center justify-center gap-1 transition"
+                          >
+                            <Eye size={12} /> Back ID
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                  </div>
                 </td>
               </tr>
             )

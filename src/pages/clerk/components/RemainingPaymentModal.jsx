@@ -1,0 +1,77 @@
+import { useState } from 'react';
+import { X, Banknote } from 'lucide-react';
+import api from '../../../api/axios';
+import { toast } from 'react-toastify';
+
+export default function RemainingPaymentModal({ booking, onClose, onSuccess }) {
+  const [paymentMode, setPaymentMode] = useState('CASH');
+  const [transactionId, setTransactionId] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // Calculate exact due amount
+  const base = Number(booking?.financials?.calculatedAmount || 0);
+  const deposit = Number(booking?.financials?.securityDeposit || 0);
+  const advance = Number(booking?.financials?.advanceAmountRequested || 0);
+  const dueAmount = (base + deposit) - advance;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsProcessing(true);
+
+    try {
+      // Hit the manual payment route (similar to the advance payment route)
+      await api.patch(`/payments/remaining/${booking.id}/manual`, {
+        paymentMode,
+        transactionId: paymentMode === 'QR' ? transactionId : undefined,
+      });
+
+      toast.success("Remaining balance collected successfully!");
+      onSuccess(); // Refresh dashboard
+      onClose();
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to record payment.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md relative">
+        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X size={20} /></button>
+        <h2 className="text-xl font-bold text-gray-900 mb-4 border-b pb-2 flex items-center gap-2">
+          <Banknote className="text-green-600"/> Collect Final Balance
+        </h2>
+        
+        <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg mb-4">
+           <p className="flex justify-between text-sm text-gray-700 mb-1"><span>Total Cost:</span> <span>₹{base + deposit}</span></p>
+           <p className="flex justify-between text-sm text-gray-700 mb-2 border-b border-yellow-200 pb-2"><span>Advance Paid:</span> <span className="text-green-600">- ₹{advance}</span></p>
+           <p className="flex justify-between font-bold text-lg text-red-600"><span>Amount to Collect:</span> <span>₹{dueAmount}</span></p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Payment Mode</label>
+            <select value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)} className="w-full border p-2 rounded">
+              <option value="CASH">Cash (In-Hand)</option>
+              <option value="QR">Bhavan QR Code / UPI</option>
+            </select>
+          </div>
+
+          {paymentMode === 'QR' && (
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Transaction Ref ID</label>
+              <input type="text" required value={transactionId} onChange={(e) => setTransactionId(e.target.value)} className="w-full border p-2 rounded" placeholder="e.g. UPI Ref Number" />
+            </div>
+          )}
+
+          <div className="pt-4">
+            <button type="submit" disabled={isProcessing} className="w-full py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 disabled:opacity-50">
+              {isProcessing ? 'Processing...' : 'Confirm Payment'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

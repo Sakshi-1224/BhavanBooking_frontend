@@ -96,7 +96,7 @@ export default function ClerkDashboard() {
   onClick={() => navigate('/facilities')} // Or wherever your facilities listing page is
   className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md font-bold text-sm transition shadow-sm"
 >
-  + New Walk-in Booking
+  + Offline Booking
 </button>
           </div>
         </div>

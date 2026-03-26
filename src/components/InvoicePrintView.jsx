@@ -47,6 +47,10 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
   const totalTax = cgst + sgst;
   const invoiceGoodsTotal = taxableAmount + totalTax;
 
+  const cgstRate = taxableAmount > 0 ? Number(((cgst / taxableAmount) * 100).toFixed(2)) : 0;
+  const sgstRate = taxableAmount > 0 ? Number(((sgst / taxableAmount) * 100).toFixed(2)) : 0;
+  const totalGstRate = cgstRate + sgstRate;
+
   // Post-Event Non-Taxable Deductions
   const electricity = Number(invoice.electricityCharges) || 0;
   const cleaning = Number(invoice.cleaningCharges) || 0;
@@ -203,7 +207,7 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
                     {discount > 0 && <p className="font-bold text-[11px] text-gray-800 mt-2 uppercase">- DISCOUNT APPLIED</p>}
                   </td>
                 <td className="border-r border-black p-1 text-center">{invoice.invoiceType === 'DONATION' ? 'N/A' : '9963'}</td>
-<td className="border-r border-black p-1 text-center">{invoice.invoiceType === 'DONATION' ? '0%' : '5%'}</td>
+<td className="border-r border-black p-1 text-center">{invoice.invoiceType === 'DONATION' ? '0%' : `${totalGstRate}%`}</td>
                   <td className="border-r border-black p-1 text-center"></td>
                   <td className="border-r border-black p-1 text-right"></td>
                   <td className="border-r border-black p-1 text-right">{taxableAmount.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
@@ -290,9 +294,9 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
                   <tr>
    <td className="border-r border-black p-1">{invoice.invoiceType === 'DONATION' ? 'N/A' : '9963'}</td>
    <td className="border-r border-black p-1 text-right pr-2">{taxableAmount.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
-   <td className="border-r border-black p-1">{invoice.invoiceType === 'DONATION' ? '0%' : '2.5%'}</td>
+   <td className="border-r border-black p-1">{invoice.invoiceType === 'DONATION' ? '0%' : `${cgstRate}%`}</td>
    <td className="border-r border-black p-1 text-right pr-2">{cgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
-   <td className="border-r border-black p-1">{invoice.invoiceType === 'DONATION' ? '0%' : '2.5%'}</td>
+   <td className="border-r border-black p-1">{invoice.invoiceType === 'DONATION' ? '0%' : `${sgstRate}%`}</td>
    <td className="border-r border-black p-1 text-right pr-2">{sgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
    <td className="p-1 text-right pr-2">{totalTax.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
 </tr>
