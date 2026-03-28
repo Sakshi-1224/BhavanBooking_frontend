@@ -1,4 +1,4 @@
-import { Eye, LogIn, Clock, LogOut as LogOutIcon, FileText, CheckCircle } from 'lucide-react';
+import { Eye, LogIn, Clock, LogOut as LogOutIcon, FileText, CheckCircle, Info } from 'lucide-react';
 
 const formatDate = (dateString) => {
   if (!dateString) return 'N/A';
@@ -45,7 +45,20 @@ export default function BookingTable({ bookings, isProcessing, handleVerify, ope
 
             return(
               <tr key={booking.id} className="hover:bg-gray-50 transition">
-                <td className="p-4 text-gray-900 font-mono text-xs">{booking.id.substring(0, 8).toUpperCase()}</td>
+               <td className="p-4">
+  <div className="flex items-center gap-2">
+    <span className="text-gray-900 font-mono text-xs font-bold bg-gray-100 px-2 py-1 rounded">
+      {booking.id.substring(0, 8).toUpperCase()}
+    </span>
+    <button 
+      onClick={() => openModal('details', booking)}
+      className="text-gray-400 hover:text-blue-600 transition"
+      title="View Full Details"
+    >
+      <Info size={18} />
+    </button>
+  </div>
+</td>
                 <td className="p-4 whitespace-nowrap">
                   <div className="flex flex-col gap-1">
                     <span className="text-green-700 font-medium">In: {formatDate(schedule.startTime)}</span>

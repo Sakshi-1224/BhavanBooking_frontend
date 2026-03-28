@@ -27,11 +27,13 @@ export default function AdminFacilitiesView() {
     pricingType: 'FIXED', // Based on logic: FIXED, HOURLY, TIERED, SLOT
   });
 
-  // Slot Configuration State
+  
+  // Slot Configuration & Included Facilities State
   const [pricingDetails, setPricingDetails] = useState({
-    slotType: 'FIXED', // FIXED or FLEXIBLE
+    slotType: 'FIXED', 
     durationHours: 1,
-    slots: []
+    slots: [],
+    included_facilities: [] // 🚨 ADD THIS LINE
   });
 
   useEffect(() => {
@@ -91,7 +93,8 @@ export default function AdminFacilitiesView() {
         setPricingDetails({
           slotType: facility.pricingDetails.slotType || 'FIXED',
           durationHours: facility.pricingDetails.durationHours || 1,
-          slots: facility.pricingDetails.slots || []
+          slots: facility.pricingDetails.slots || [],
+          included_facilities: facility.pricingDetails.included_facilities || []
         });
       } else {
         setPricingDetails({ slotType: 'FIXED', durationHours: 1, slots: [] });
@@ -152,23 +155,31 @@ export default function AdminFacilitiesView() {
         data.append('existingImages', JSON.stringify(imagePreviews));
       }
       // Inject Slot data if pricing type is SLOT
-      if (formData.pricingType === 'SLOT') {
-        const payload = { slotType: pricingDetails.slotType };
-        if (pricingDetails.slotType === 'FLEXIBLE') {
-          payload.durationHours = Number(pricingDetails.durationHours);
-        } else {
-          payload.slots = pricingDetails.slots.map(s => ({
-            id: s.id,
-            label: s.label,
-            startTime: s.startTime,
-            endTime: s.endTime,
-            price: Number(s.price)
-          }));
-        }
-        // Because of multipart/form-data, backend must JSON.parse() this field
-        data.append('pricingDetails', JSON.stringify(payload));
+    // --- DYNAMIC PRICING DETAILS PAYLOAD BUILDER ---
+      const payloadPricingDetails = {};
+
+      // 1. If it's a Package/Complex, add the selected inclusions
+      if (formData.facilityType === 'PACKAGE' || formData.facilityType === 'COMPLEX') {
+        payloadPricingDetails.included_facilities = pricingDetails.included_facilities || [];
       }
 
+      // 2. If it's a Slot, add the time slot rules
+      if (formData.pricingType === 'SLOT') {
+        payloadPricingDetails.slotType = pricingDetails.slotType;
+        if (pricingDetails.slotType === 'FLEXIBLE') {
+          payloadPricingDetails.durationHours = Number(pricingDetails.durationHours);
+        } else {
+          payloadPricingDetails.slots = pricingDetails.slots.map(s => ({
+            id: s.id, label: s.label, startTime: s.startTime, endTime: s.endTime, price: Number(s.price)
+          }));
+        }
+      }
+
+      // 3. Only append the object if it actually has data
+      if (Object.keys(payloadPricingDetails).length > 0) {
+        data.append('pricingDetails', JSON.stringify(payloadPricingDetails));
+      }
+      // ------------------------------------------------
       if (editingId) {
         await api.patch(`/facilities/${editingId}`, data);
         toast.success('Facility updated successfully!');
@@ -237,7 +248,7 @@ export default function AdminFacilitiesView() {
               <tr className="bg-gray-50 border-b text-gray-600 text-sm">
                 <th className="p-3 font-semibold">Name</th>
                 <th className="p-3 font-semibold">Type</th>
-                <th className="p-3 font-semibold">Pricing Logic</th>
+                <th className="p-3 font-semibold">Price Calculation</th>
                 <th className="p-3 font-semibold">Base Rate (₹)</th>
                 <th className="p-3 font-semibold">Actions</th>
               </tr>
@@ -273,28 +284,50 @@ export default function AdminFacilitiesView() {
                 <input type="text" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border p-2.5 rounded-md focus:ring-blue-500" />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  {/* Updated based on DTO constraints */}
-                  <label className="block text-sm font-bold text-gray-700 mb-1">Facility Type</label>
-                  <select value={formData.facilityType} onChange={e => setFormData({...formData, facilityType: e.target.value})} className="w-full border p-2.5 rounded-md bg-white">
-                    <option value="ROOM">Room</option>
-                    <option value="HALL">Hall</option>
-                    <option value="LAWN">Lawn</option>
-                    <option value="CUSTOM">Custom / Package</option>
-                  </select>
-                </div>
-                
-              </div>
+             <div className="grid grid-cols-2 gap-4">
+  
+  {/* Facility Type */}
+  <div>
+    <label className="block text-sm font-bold text-gray-700 mb-1">
+      Facility Type
+    </label>
+    <select
+      value={formData.facilityType}
+      onChange={e => setFormData({...formData, facilityType: e.target.value})}
+      className="w-full border p-2.5 rounded-md bg-white"
+    >
+      <option value="ROOM">Room</option>
+      <option value="HALL">Hall</option>
+      <option value="LAWN">Lawn</option>
+      <option value="PACKAGE">Package</option>
+      <option value="COMPLEX">Complex (Full Bhavan)</option>
+    </select>
+  </div>
+
+  {/* Capacity */}
+  <div>
+    <label className="block text-sm font-bold text-gray-700 mb-1">
+      Capacity
+    </label>
+    <input
+      type="number"
+      required
+      value={formData.capacity}
+      onChange={e => setFormData({...formData,  capacity: e.target.value === "" ? "" : Number(e.target.value)})}
+      className="w-full border p-2.5 rounded-md focus:ring-blue-500"
+    />
+  </div>
+
+</div>
 
               <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border">
                 <div>
                   <label className="block text-sm font-bold text-green-700 mb-1">Standard Base Rate (₹)</label>
-                  <input type="number" required value={formData.baseRate} onChange={e => setFormData({...formData, baseRate: Number(e.target.value)})} className="w-full border p-2.5 rounded-md font-bold focus:ring-green-500" />
+                  <input type="number" required value={formData.baseRate} onChange={e => setFormData({...formData, baseRate: e.target.value === "" ? "" : Number(e.target.value)})} className="w-full border p-2.5 rounded-md font-bold focus:ring-green-500" />
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-orange-700 mb-1">Security Deposit (₹)</label>
-                  <input type="number" required value={formData.securityDeposit} onChange={e => setFormData({...formData, securityDeposit: Number(e.target.value)})} className="w-full border p-2.5 rounded-md font-bold focus:ring-orange-500" />
+                  <input type="number" required value={formData.securityDeposit} onChange={e => setFormData({...formData, securityDeposit: e.target.value === "" ? "" : Number(e.target.value)})} className="w-full border p-2.5 rounded-md font-bold focus:ring-orange-500" />
                 </div>
               </div>
 
@@ -306,7 +339,43 @@ export default function AdminFacilitiesView() {
                     <option value="TIERED">Tiered</option>
                     <option value="SLOT">Time Slots (Shifts)</option>
                  </select>
+               
               </div>
+
+
+              {/* DYNAMIC INCLUSIONS UI (Only for Packages/Complexes) */}
+              {(formData.facilityType === 'PACKAGE' || formData.facilityType === 'COMPLEX') && (
+                <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
+                  <label className="block text-sm font-bold text-orange-800 mb-2">Included Facilities in this Package</label>
+                  <p className="text-xs text-orange-700 mb-3">Select the individual facilities below. If someone books this package, the selected rooms/halls will be automatically blocked from being booked separately!</p>
+                  
+                  <div className="grid grid-cols-2 gap-3 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                    {facilities
+                      .filter(f => f.id !== editingId && f.facilityType !== 'PACKAGE' && f.facilityType !== 'COMPLEX') // Don't show packages inside packages!
+                      .map(fac => {
+                        const isChecked = pricingDetails.included_facilities?.includes(fac.name);
+                        return (
+                          <label key={fac.id} className={`flex items-center gap-2 text-sm p-2 rounded border cursor-pointer transition ${isChecked ? 'bg-orange-100 border-orange-400 font-bold text-orange-900 shadow-sm' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}>
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                setPricingDetails(prev => {
+                                  const current = prev.included_facilities || [];
+                                  if (e.target.checked) return { ...prev, included_facilities: [...current, fac.name] };
+                                  return { ...prev, included_facilities: current.filter(n => n !== fac.name) };
+                                });
+                              }}
+                              className="rounded text-orange-600 focus:ring-orange-500 w-4 h-4"
+                            />
+                            <span className="truncate">{fac.name}</span>
+                          </label>
+                        );
+                      })
+                    }
+                  </div>
+                </div>
+              )}
 
               {/* DYNAMIC SLOT BUILDER UI */}
               {formData.pricingType === 'SLOT' && (

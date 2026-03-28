@@ -35,7 +35,7 @@ export default function BookingWizard() {
   const [endDate, setEndDate] = useState('');
   const [bookingOption, setBookingOption] = useState(''); // Used for TIERED (e.g., "1", "2" days)
   const [selectedSlot, setSelectedSlot] = useState(null); // Used for dynamic FIXED slots
-
+const [startTimeInput, setStartTimeInput] = useState('');
   const [formData, setFormData] = useState({ startTime: '', endTime: '', guestCount: 1, eventType: 'Marriage' });
   const [customerData, setCustomerData] = useState({ fullName: '', email: '', mobile: '', address: '' });
   
@@ -116,13 +116,23 @@ export default function BookingWizard() {
 
     if (isCustomMode) {
       // Standard rule for Custom/Rooms: Need both start and end date
-      if (startDate && endDate) {
-        finalStart = new Date(startDate);
-        finalEnd = new Date(endDate);
-        if (hasRoom) { finalStart.setHours(10, 0); finalEnd.setHours(8, 0); }
-        else if (isOnlyMiniHall) { finalStart.setHours(18, 0); finalEnd.setHours(23, 0); }
-        else { finalStart.setHours(8, 0); finalEnd.setHours(8, 0); }
-        isValid = true;
+    if (isOnlyMiniHall) {
+        if (startDate) {
+          finalStart = new Date(startDate);
+          finalEnd = new Date(startDate); // End date is the same calendar day!
+          finalStart.setHours(18, 0);     // 6:00 PM
+          finalEnd.setHours(23, 0);       // 11:00 PM
+          isValid = true;
+        }
+      } else {
+        // Standard Custom Mode (requires both start and end dates)
+        if (startDate && endDate) {
+          finalStart = new Date(startDate);
+          finalEnd = new Date(endDate);
+          if (hasRoom) { finalStart.setHours(10, 0); finalEnd.setHours(8, 0); }
+          else { finalStart.setHours(8, 0); finalEnd.setHours(8, 0); }
+          isValid = true;
+        }
       }
     } else {
       // DYNAMIC BACKEND LOGIC BASED ON PRICING TYPE
@@ -138,11 +148,14 @@ export default function BookingWizard() {
         } 
         else if (facility.pricingDetails?.slotType === 'FLEXIBLE') {
           // Admin defined exact duration (e.g., 6 hours)
-          if (startDate) {
+          if (startDate && startTimeInput) {
             const duration = Number(facility.pricingDetails.durationHours) || 1;
-            finalStart = new Date(startDate);
-            finalEnd = new Date(startDate);
+           finalStart = createDate(startDate, startTimeInput);
+            
+            // 2. Clone it, and add the duration hours to make the end date!
+            finalEnd = new Date(finalStart.getTime()); // Exact clone
             finalEnd.setHours(finalEnd.getHours() + duration);
+            
             isValid = true;
           }
         }
@@ -181,7 +194,7 @@ export default function BookingWizard() {
     } else { 
       setFormData(prev => ({ ...prev, startTime: '', endTime: '' })); 
     }
-  }, [startDate, endDate, bookingOption, selectedSlot, facility, isCustomMode, needsEndDate, hasRoom, isOnlyMiniHall]);
+  }, [startDate, endDate, bookingOption, selectedSlot, startTimeInput, facility, isCustomMode, needsEndDate, hasRoom, isOnlyMiniHall]);
   // -----------------------------------------------------------------------------------
 
 
@@ -352,6 +365,8 @@ export default function BookingWizard() {
           
           startDate={startDate} setStartDate={safeSetStartDate} 
           endDate={endDate} setEndDate={safeSetEndDate} 
+
+          startTimeInput={startTimeInput} setStartTimeInput={setStartTimeInput}
           
           bookingOption={bookingOption} setBookingOption={safeSetBookingOption}
           selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot} // PASSING NEW DYNAMIC STATE

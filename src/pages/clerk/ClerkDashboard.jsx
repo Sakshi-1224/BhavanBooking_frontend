@@ -11,6 +11,8 @@ import CheckInModal from './components/CheckInModal';
 import CheckoutModal from './components/CheckoutModal';
 import AdvancePaymentModal from './components/AdvancePaymentModal';
 import InvoicePrintView from '../../components/InvoicePrintView';
+import RemainingPaymentModal from './components/RemainingPaymentModal'; 
+import BookingDetailsModal from '../../components/booking/BookingDetailsModal';
 
 export default function ClerkDashboard() {
   const [bookings, setBookings] = useState([]);
@@ -112,12 +114,15 @@ export default function ClerkDashboard() {
           />
         </div>
       </div>
+      {/* 👇 ADD THIS LINE 👇 */}
+      {modalType === 'details' && <BookingDetailsModal booking={selectedBooking} onClose={() => setModalType(null)} />}
 
       {/* Render the appropriate modal based on state */}
       {modalType === 'checkin' && <CheckInModal booking={selectedBooking} onClose={() => setModalType(null)} onSuccess={closeModalAndRefresh} />}
       {modalType === 'recordAdvance' && <AdvancePaymentModal booking={selectedBooking} onClose={() => setModalType(null)} onSuccess={closeModalAndRefresh} />}
       {modalType === 'checkout' && <CheckoutModal booking={selectedBooking} onClose={() => setModalType(null)} onSuccess={closeModalAndRefresh} />}
-
+{modalType === 'recordRemaining' && <RemainingPaymentModal booking={selectedBooking} onClose={() => setModalType(null)} onSuccess={closeModalAndRefresh} />}
+  
       {/* Basic ID Viewer Modal */}
       {viewIdModal && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4">

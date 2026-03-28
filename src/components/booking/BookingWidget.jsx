@@ -13,6 +13,10 @@ export default function BookingWidget({
   setStartDate,
   endDate,
   setEndDate,
+  // NEW PROPS FOR TIME SELECTION
+  startTimeInput,
+  setStartTimeInput,
+  
   bookingOption,
   setBookingOption,
   selectedSlot,
@@ -128,13 +132,24 @@ export default function BookingWidget({
               </div>
             ) : (
               <div className="bg-white p-4 rounded-xl border-2 border-blue-200">
-                <span className="block text-sm font-medium text-gray-600">Required Duration:</span>
-                <span className="block text-lg font-bold text-gray-900">
-                  {facility.pricingDetails?.durationHours} Continuous Hours
-                </span>
-                <p className="text-xs text-gray-500 mt-2">
-                  Time will be calculated automatically from check-in.
-                </p>
+                <span className="block text-sm font-medium text-gray-600">Required Duration: <span className="font-bold text-gray-900">{facility.pricingDetails?.durationHours} Hours</span></span>
+                
+                {/* 🚨 NEW: Time Picker for Flexible Slots 🚨 */}
+                <div className="mt-4">
+                   <label className="block text-xs font-bold text-gray-700 mb-1">Select Start Time</label>
+                   <input 
+                     type="time" 
+                     value={startTimeInput} 
+                     onChange={(e) => setStartTimeInput(e.target.value)} 
+                     className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                   />
+                </div>
+                
+                {startTimeInput && (
+                  <p className="text-xs text-green-700 mt-3 font-semibold bg-green-50 p-2 rounded">
+                    Check-out will be automatically calculated as {facility.pricingDetails?.durationHours} hours from {startTimeInput}.
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -158,14 +173,19 @@ export default function BookingWidget({
         {(!availability || !availability.isAvailable) && !partialAvailability && (
           <button 
             onClick={handleCheckAvailability} 
-            disabled={isChecking || !startDate || (needsEndDate && !endDate) || (isSlot && slotType === 'FIXED' && !selectedSlot)} 
+            disabled={
+              isChecking || 
+              !startDate || 
+              (needsEndDate && !endDate) || 
+              (isSlot && slotType === 'FIXED' && !selectedSlot) ||
+              (isSlot && slotType === 'FLEXIBLE' && !startTimeInput) // 🚨 NEW: Disable if time not picked
+            } 
             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl transition shadow-md disabled:opacity-50"
           >
             {isChecking ? 'Checking System...' : 'Check Availability'}
           </button>
         )}
 
-        {/* 🚨 FIX: Safely mapping to availability.pricing 🚨 */}
         {availability && availability.isAvailable && (
           <div className="animate-fade-in">
             <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-4">
@@ -185,7 +205,6 @@ export default function BookingWidget({
           </div>
         )}
 
-        {/* 🚨 FIX: Safely calculating partial total dynamically 🚨 */}
         {partialAvailability && (
           <div className="animate-fade-in border-2 border-orange-300 bg-orange-50 rounded-xl p-4 mt-4">
             <h3 className="font-bold text-orange-800 mb-2">⚠️ Partial Availability</h3>

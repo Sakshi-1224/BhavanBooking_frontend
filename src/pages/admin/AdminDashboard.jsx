@@ -9,7 +9,7 @@ import InvoicePrintView from '../../components/InvoicePrintView';
 import AdminProfileModal from './AdminProfileModal'; 
 import ReportsView from './ReportsView';
 import AdminFacilitiesView from './AdminFacilitiesView';
-
+import BookingDetailsModal from '../../components/booking/BookingDetailsModal';
 const formatDate = (dateString) => {
   if (!dateString) return 'N/A';
   const options = { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
@@ -272,53 +272,12 @@ export default function AdminDashboard() {
         onClose={() => setShowProfileModal(false)} 
       />
 
-      {/* DETAILED VIEW MODAL */}
+   {/* DETAILED VIEW MODAL (Now using the shared component!) */}
       {viewingDetails && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto relative">
-            <button onClick={() => setViewingDetails(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X size={24} /></button>
-            <div className="p-6 border-b">
-              <h2 className="text-2xl font-bold text-gray-900">Booking Details</h2>
-              <p className="font-mono text-sm text-gray-500 mt-1">ID: {viewingDetails.id}</p>
-            </div>
-            
-            <div className="p-6 space-y-6">
-              <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border">
-                <div><span className="text-xs text-gray-500 uppercase font-bold block">User</span><span className="font-semibold">{viewingDetails.user?.fullName} ({viewingDetails.user?.mobile})</span></div>
-                <div><span className="text-xs text-gray-500 uppercase font-bold block">Main Facility</span><span className="font-semibold">{viewingDetails.facility?.name}</span></div>
-                <div><span className="text-xs text-gray-500 uppercase font-bold block">Event Type</span><span className="font-semibold">{viewingDetails.eventType} ({viewingDetails.guestCount} Guests)</span></div>
-                <div><span className="text-xs text-gray-500 uppercase font-bold block">Current Status</span><span className="font-bold text-blue-600">{viewingDetails.status}</span></div>
-              </div>
-
-              {viewingDetails.customDetails?.length > 0 && (
-                <div>
-                  <h3 className="font-bold text-gray-800 mb-2 border-b pb-1">Additional Items Requested</h3>
-                  <ul className="space-y-1">
-                    {viewingDetails.customDetails.map((cf, idx) => (
-                      <li key={idx} className="flex justify-between text-sm bg-gray-50 px-3 py-2 rounded">
-                        <span>{cf.name} x {cf.quantity}</span>
-                        <span className="font-medium">₹{cf.price}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              <div>
-                 <h3 className="font-bold text-gray-800 mb-2 border-b pb-1">Financial Overview</h3>
-                 <div className="flex justify-between text-sm py-1"><span>Base Amount</span><span>₹{viewingDetails.financials?.calculatedAmount}</span></div>
-                 <div className="flex justify-between text-sm py-1"><span>Security Deposit</span><span>₹{viewingDetails.financials?.securityDeposit}</span></div>
-                 {(viewingDetails.financials?.advanceRequested || viewingDetails.financials?.advanceAmountRequested) > 0 && (
-                   <div className="flex justify-between text-sm py-1 text-blue-600 font-medium">
-                     <span>Advance Requested</span>
-                     <span>₹{viewingDetails.financials?.advanceRequested || viewingDetails.financials?.advanceAmountRequested}</span>
-                   </div>
-                 )}
-                 <div className="flex justify-between text-sm py-1 font-bold text-lg mt-2 pt-2 border-t"><span>Total Value</span><span>₹{Number(viewingDetails.financials?.calculatedAmount) + Number(viewingDetails.financials?.securityDeposit)}</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <BookingDetailsModal 
+          booking={viewingDetails} 
+          onClose={() => setViewingDetails(null)} 
+        />
       )}
 
       {/* INITIAL BOOKING APPROVAL MODAL */}

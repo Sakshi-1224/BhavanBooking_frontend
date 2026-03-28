@@ -20,11 +20,11 @@ export default function RemainingPaymentModal({ booking, onClose, onSuccess }) {
 
     try {
       // Hit the manual payment route (similar to the advance payment route)
-      await api.patch(`/payments/remaining/${booking.id}/manual`, {
-        paymentMode,
-        transactionId: paymentMode === 'QR' ? transactionId : undefined,
+    await api.post('/payments/offline-remaining', {
+        bookingId: booking.id,
+        paymentMode: paymentMode,
+        amountCollected: Number(dueAmount) // Sends the exact required balance calculated above
       });
-
       toast.success("Remaining balance collected successfully!");
       onSuccess(); // Refresh dashboard
       onClose();
