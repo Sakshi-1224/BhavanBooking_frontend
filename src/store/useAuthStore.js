@@ -4,22 +4,21 @@ import { persist } from 'zustand/middleware';
 const useAuthStore = create(
   persist(
     (set) => ({
-      user: null,
-      token: null,
+       user: null,
       role: null,
       isAuthenticated: false,
 
       // Unified login function
-      login: (userData, token) => set({
+      login: (userData) => set({
         user: userData,
-        token: token,
+      
         role: userData.role,
         isAuthenticated: true,
       }),
 
       logout: () => set({
         user: null,
-        token: null,
+       
         role: null,
         isAuthenticated: false,
       }),

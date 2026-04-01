@@ -48,6 +48,17 @@ export default function ClerkDashboard() {
     } catch (error) { toast.error(error.response?.data?.message || 'Failed to verify booking'); } 
     finally { setIsProcessing(null); }
   };
+  
+  const handleLogout = async () => {
+    try {
+      await api.post('/auth/user/logout');
+    } catch (error) {
+      console.error("Failed to clear cookie on backend", error);
+    } finally {
+      logout();
+      navigate('/clerk/login');
+    }
+  };
 
   const openModal = (type, booking) => {
     setSelectedBooking(booking);
@@ -82,7 +93,9 @@ export default function ClerkDashboard() {
           <div className="font-bold text-xl tracking-wider">BhavanBook <span className="text-green-300">| Desk</span></div>
           <div className="flex items-center gap-4">
             <span className="text-sm hidden sm:block">Clerk: {user?.fullName}</span>
-            <button onClick={() => { logout(); navigate('/clerk/login'); }} className="flex items-center gap-1 hover:text-green-200 transition"><LogOut size={18} /> Logout</button>
+           <button onClick={handleLogout} className="flex items-center gap-1 hover:text-green-200 transition">
+  <LogOut size={18} /> Logout
+</button>
           </div>
         </div>
       </nav>

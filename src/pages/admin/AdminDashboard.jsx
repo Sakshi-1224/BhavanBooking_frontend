@@ -144,9 +144,17 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleLogout = () => {
-    logout();
-    navigate('/admin/login');
+ const handleLogout = async () => {
+    try {
+      // 1. Tell the backend to destroy the httpOnly cookie
+      await api.post('/auth/user/logout'); 
+    } catch (error) {
+      console.error("Failed to clear cookie on backend", error);
+    } finally {
+      // 2. Clear frontend state and redirect regardless of API success
+      logout();
+      navigate('/admin/login');
+    }
   };
 
   const filteredBookings = bookings.filter((b) => {

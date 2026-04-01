@@ -43,6 +43,7 @@ const StatusBadge = ({ status }) => {
 };
 
 export default function UserDashboard() {
+  
   const [aadhaarFiles, setAadhaarFiles] = useState({ front: null, back: null });
   const [isUploading, setIsUploading] = useState(false);
   const [printModal, setPrintModal] = useState(null);

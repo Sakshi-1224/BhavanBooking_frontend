@@ -15,9 +15,9 @@ export default function UserLogin() {
     e.preventDefault();
     try {
       const response = await api.post('/auth/user/login', formData);
-      const { userAccessToken, user } = response.data.data;
+      const { user } = response.data.data;
       
-      login(user, userAccessToken);
+      login(user);
       toast.success('Logged in successfully!');
       navigate('/facilities'); 
     } catch (error) {

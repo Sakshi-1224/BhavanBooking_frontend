@@ -164,9 +164,18 @@ export default function Facilities() {
     fetchFacilities('', '');
   };
 
-  const handleLogout = () => {
-    logout();
-    navigate('/user/login');
+const handleLogout = async () => {
+    try {
+      // 1. Tell the backend to clear the httpOnly cookie
+      await api.post('/auth/user/logout'); 
+    } catch (error) {
+      console.error("Failed to clear cookie on backend", error);
+    } finally {
+      // 2. Clear local Zustand state
+      logout(); 
+      // 3. Redirect to login
+      navigate('/user/login'); 
+    }
   };
 
   return (
