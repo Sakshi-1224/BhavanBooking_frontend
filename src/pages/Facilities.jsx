@@ -19,7 +19,7 @@ const getPlaceholderImage = (type, index) => {
 };
 
 // Dedicated card component to handle its own image slider state
-const FacilityCard = ({ facility, index, navigate }) => {
+const FacilityCard = ({ facility, index, navigate, isAuthenticated }) => {
   const [imgIdx, setImgIdx] = useState(0);
   const isAvailable = facility.isAvailableForDates !== false;
   
@@ -38,10 +38,22 @@ const FacilityCard = ({ facility, index, navigate }) => {
     setImgIdx((prev) => (prev === 0 ? images.length - 1 : prev - 1));
   };
 
+  // NEW: Secure click handler
+  const handleCardClick = () => {
+    if (!isAvailable) {
+      return toast.error("This package is sold out for the selected dates.");
+    }
+    if (!isAuthenticated) {
+      toast.info("Please log in or create an account to book this facility.");
+      return navigate('/user/login');
+    }
+    navigate(`/book/${facility.id}`);
+  };
+
   return (
     <div 
       className={`flex flex-col md:flex-row bg-white rounded-xl border shadow-sm transition overflow-hidden ${!isAvailable ? 'opacity-60 cursor-not-allowed grayscale-[0.5]' : 'hover:shadow-md cursor-pointer'}`}
-      onClick={() => isAvailable ? navigate(`/book/${facility.id}`) : toast.error("This package is sold out for the selected dates.")}
+      onClick={handleCardClick}
     >
       <div className="md:w-1/3 relative h-48 md:h-auto group">
         <img 
@@ -164,7 +176,7 @@ export default function Facilities() {
     fetchFacilities('', '');
   };
 
-const handleLogout = async () => {
+  const handleLogout = async () => {
     try {
       // 1. Tell the backend to clear the httpOnly cookie
       await api.post('/auth/user/logout'); 
@@ -176,6 +188,15 @@ const handleLogout = async () => {
       // 3. Redirect to login
       navigate('/user/login'); 
     }
+  };
+
+  // NEW: Secure custom booking click handler
+  const handleCustomBookingClick = () => {
+    if (!isAuthenticated) {
+      toast.info("Please log in or create an account to make a custom booking.");
+      return navigate('/user/login');
+    }
+    navigate('/book/custom');
   };
 
   return (
@@ -265,7 +286,10 @@ const handleLogout = async () => {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col lg:flex-row gap-6">
         <div className="w-full lg:w-3/4 space-y-6 mx-auto">
           
-          <div className="flex flex-col md:flex-row bg-gradient-to-r from-blue-50 to-indigo-100 rounded-xl border border-blue-200 shadow-md hover:shadow-lg transition-all overflow-hidden cursor-pointer transform hover:-translate-y-1" onClick={() => navigate('/book/custom')}>
+          <div 
+            className="flex flex-col md:flex-row bg-gradient-to-r from-blue-50 to-indigo-100 rounded-xl border border-blue-200 shadow-md hover:shadow-lg transition-all overflow-hidden cursor-pointer transform hover:-translate-y-1" 
+            onClick={handleCustomBookingClick}
+          >
             <div className="md:w-1/3 bg-blue-600 flex flex-col items-center justify-center text-white p-6">
               <Layers size={48} className="mb-2 opacity-80" />
               <span className="text-xl font-extrabold text-center">Custom Booking</span>
@@ -295,6 +319,7 @@ const handleLogout = async () => {
                 facility={facility} 
                 index={index} 
                 navigate={navigate} 
+                isAuthenticated={isAuthenticated}
               />
             ))
           )}

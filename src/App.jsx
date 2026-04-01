@@ -38,7 +38,9 @@ function App() {
           <Route path="/my-bookings" element={<UserDashboard />} />
         </Route>
 
-<Route path="/book/:facilityId" element={<BookingWizard />} />
+<Route element={<ProtectedRoute allowedRoles={['USER', 'ADMIN', 'CLERK']} />}>
+          <Route path="/book/:facilityId" element={<BookingWizard />} />
+        </Route>
 
         {/* 🔒 Protected Routes for ADMINS */}
 <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
