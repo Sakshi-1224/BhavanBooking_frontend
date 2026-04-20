@@ -1,11 +1,12 @@
 import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { ToastContainer } from 'react-toastify';
+import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-// Store and API
+// Store, API, and Socket
 import useAuthStore from './store/useAuthStore';
 import api from './api/axios';
+import socket from './api/socket';
 
 // Pages & Components
 import ClerkDashboard from './pages/clerk/ClerkDashboard';
@@ -22,16 +23,13 @@ import UserDashboard from './pages/user/UserDashboard';
 import AdminDashboard from './pages/admin/AdminDashboard';
 
 function App() {
-  const { login, logout } = useAuthStore();
+  const { login, logout, isAuthenticated, user } = useAuthStore();
 
+  // 1. Initial Authentication & CSRF Bootstrapping
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        // This GET request sets the 'csrfToken' cookie if it's missing
-        // and restores the user session if they refresh the page
         const response = await api.get('/auth/me');
-        
-        // Safely extract the user object depending on your exact backend response format
         const userData = response.data.data?.user || response.data.user;
         
         if (userData) {
@@ -40,7 +38,6 @@ function App() {
           logout();
         }
       } catch (error) {
-        // If 401 Unauthorized or request fails, clear the local auth state
         logout(); 
       }
     };
@@ -48,13 +45,59 @@ function App() {
     fetchUser();
   }, [login, logout]);
 
+  // 2. Real-Time Socket Lifecycle Management
+  useEffect(() => {
+    // Only connect if the user is verified and logged in
+    if (isAuthenticated && user) {
+      socket.connect();
+
+      // Listen for a successful connection
+      socket.on('connect', () => {
+        console.log('🔌 Connected to real-time server:', socket.id);
+        
+        // Let the backend know who this is by joining a specific user room
+        socket.emit('join_room', `user_${user.id}`);
+        
+        // If they are an Admin or Clerk, join the staff room for global notifications
+        if (user.role === 'ADMIN' || user.role === 'CLERK') {
+          socket.emit('join_room', 'admin-notifications');
+        }
+      });
+
+      // Global Notification Listener (Handles popups globally across the whole app)
+      const handleGlobalNotification = (data) => {
+        toast.info(data.message || 'You have a new notification!', {
+          position: "bottom-right",
+          autoClose: 5000,
+        });
+      };
+      socket.on('notification', handleGlobalNotification);
+
+      // Handle connection errors (like if the token expires)
+      socket.on('connect_error', (err) => {
+        console.error('Socket connection error:', err.message);
+      });
+
+    } else {
+      // Disconnect if user logs out
+      socket.disconnect();
+    }
+
+    // Cleanup listeners when App unmounts or auth state changes
+    return () => {
+      socket.off('connect');
+      socket.off('notification');
+      socket.off('connect_error');
+      socket.disconnect();
+    };
+  }, [isAuthenticated, user]);
+
   return (
     <Router>
+      {/* Toast container handles the global socket alerts */}
       <ToastContainer position="top-right" autoClose={3000} />
       <Routes>
-        {/* Default Redirect */}
         <Route path="/" element={<Navigate to="/facilities" replace />} />
-
         <Route path="/facilities" element={<Facilities />} />
         
         {/* Public Routes */}
@@ -64,7 +107,7 @@ function App() {
         <Route path="/clerk/login" element={<ClerkLogin />} />
         <Route path="/unauthorized" element={<Unauthorized />} />
 
-        {/* 🔒 Protected Routes for USERS */}
+        {/* Protected Routes */}
         <Route element={<ProtectedRoute allowedRoles={['USER']} />}>
           <Route path="/my-bookings" element={<UserDashboard />} />
         </Route>
@@ -73,12 +116,11 @@ function App() {
           <Route path="/book/:facilityId" element={<BookingWizard />} />
         </Route>
 
-        {/* 🔒 Protected Routes for ADMINS */}
         <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
           <Route path="/admin/dashboard" element={<AdminDashboard />} />
+          <Route path="/admin/create-clerk" element={<CreateClerk />} />
         </Route>
 
-        {/* 🔒 Protected Routes for CLERKS */}
         <Route element={<ProtectedRoute allowedRoles={['CLERK']} />}>
           <Route path="/clerk/dashboard" element={<ClerkDashboard />} />
         </Route>

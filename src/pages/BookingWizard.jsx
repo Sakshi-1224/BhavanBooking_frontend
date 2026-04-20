@@ -35,9 +35,16 @@ export default function BookingWizard() {
   const [endDate, setEndDate] = useState('');
   const [bookingOption, setBookingOption] = useState(''); // Used for TIERED (e.g., "1", "2" days)
   const [selectedSlot, setSelectedSlot] = useState(null); // Used for dynamic FIXED slots
-const [startTimeInput, setStartTimeInput] = useState('');
+  const [startTimeInput, setStartTimeInput] = useState('');
   const [formData, setFormData] = useState({ startTime: '', endTime: '', guestCount: 1, eventType: 'Marriage' });
   const [customerData, setCustomerData] = useState({ fullName: '', email: '', mobile: '', address: '' });
+  
+  // 🚨 NEW: State for Walk-in Holds
+  const [holdData, setHoldData] = useState({
+    isHoldingAllowed: false,
+    holdingPercentage: 20,
+    holdingValidityDays: 2
+  });
   
   const [availability, setAvailability] = useState(null);
   const [partialAvailability, setPartialAvailability] = useState(null); 
@@ -102,7 +109,7 @@ const [startTimeInput, setStartTimeInput] = useState('');
   }
 
   // -----------------------------------------------------------------------------------
-  // 🚀 THE DYNAMIC TIME CALCULATION ENGINE (REMOVED ALL HARDCODED "MORNING/EVENING")
+  // 🚀 THE DYNAMIC TIME CALCULATION ENGINE
   // -----------------------------------------------------------------------------------
   useEffect(() => {
     if (!startDate || !facility) return;
@@ -115,8 +122,7 @@ const [startTimeInput, setStartTimeInput] = useState('');
     const createDate = (dateStr, timeStr) => new Date(`${dateStr.split('T')[0]}T${timeStr}:00`);
 
     if (isCustomMode) {
-      // Standard rule for Custom/Rooms: Need both start and end date
-    if (isOnlyMiniHall) {
+      if (isOnlyMiniHall) {
         if (startDate) {
           finalStart = new Date(startDate);
           finalEnd = new Date(startDate); // End date is the same calendar day!
@@ -125,7 +131,6 @@ const [startTimeInput, setStartTimeInput] = useState('');
           isValid = true;
         }
       } else {
-        // Standard Custom Mode (requires both start and end dates)
         if (startDate && endDate) {
           finalStart = new Date(startDate);
           finalEnd = new Date(endDate);
@@ -135,11 +140,8 @@ const [startTimeInput, setStartTimeInput] = useState('');
         }
       }
     } else {
-      // DYNAMIC BACKEND LOGIC BASED ON PRICING TYPE
       if (facility.pricingType === 'SLOT') {
-        
         if (facility.pricingDetails?.slotType === 'FIXED') {
-          // Admin defined exact shifts (e.g., "08:00 to 15:00")
           if (selectedSlot && startDate) {
             finalStart = createDate(startDate, selectedSlot.startTime);
             finalEnd = createDate(startDate, selectedSlot.endTime);
@@ -147,21 +149,15 @@ const [startTimeInput, setStartTimeInput] = useState('');
           }
         } 
         else if (facility.pricingDetails?.slotType === 'FLEXIBLE') {
-          // Admin defined exact duration (e.g., 6 hours)
           if (startDate && startTimeInput) {
             const duration = Number(facility.pricingDetails.durationHours) || 1;
-           finalStart = createDate(startDate, startTimeInput);
-            
-            // 2. Clone it, and add the duration hours to make the end date!
+            finalStart = createDate(startDate, startTimeInput);
             finalEnd = new Date(finalStart.getTime()); // Exact clone
             finalEnd.setHours(finalEnd.getHours() + duration);
-            
             isValid = true;
           }
         }
-
       } else if (facility.pricingType === 'TIERED') {
-        // Based on number of days selected
         if (startDate && bookingOption) {
           const days = parseInt(bookingOption.split('_')[0]) || 1;
           finalStart = new Date(startDate);
@@ -169,7 +165,6 @@ const [startTimeInput, setStartTimeInput] = useState('');
           finalEnd.setDate(finalEnd.getDate() + days);
           isValid = true;
         }
-
       } else if (facility.pricingType === 'HOURLY' || facility.pricingType === 'FIXED' || facility.facilityType === 'ROOM') {
         if (startDate && endDate) {
           finalStart = new Date(startDate);
@@ -179,7 +174,6 @@ const [startTimeInput, setStartTimeInput] = useState('');
       }
     }
 
-    // Apply the valid dates to the Form Payload
     if (isValid && finalStart && finalEnd) {
       if (finalEnd <= finalStart) {
          toast.error("Check-out time must be after check-in time.");
@@ -195,7 +189,6 @@ const [startTimeInput, setStartTimeInput] = useState('');
       setFormData(prev => ({ ...prev, startTime: '', endTime: '' })); 
     }
   }, [startDate, endDate, bookingOption, selectedSlot, startTimeInput, facility, isCustomMode, needsEndDate, hasRoom, isOnlyMiniHall]);
-  // -----------------------------------------------------------------------------------
 
 
   useEffect(() => {
@@ -246,7 +239,6 @@ const [startTimeInput, setStartTimeInput] = useState('');
     setAvailability(null); setPartialAvailability(null);
   };
 
-  // Safe resetters
   const safeSetStartDate = (val) => { setStartDate(val); setSelectedSlot(null); setAvailability(null); setPartialAvailability(null); };
   const safeSetEndDate = (val) => { setEndDate(val); setAvailability(null); setPartialAvailability(null); };
   const safeSetBookingOption = (val) => { setBookingOption(val); setAvailability(null); setPartialAvailability(null); };
@@ -284,7 +276,11 @@ const [startTimeInput, setStartTimeInput] = useState('');
     try {
       let finalPayload = buildPayload(isBookingPartial);
       let endpoint = isStaff ? '/bookings/on-behalf' : '/bookings';
-      if (isStaff) finalPayload = { ...finalPayload, ...customerData };
+      
+      // 🚨 UPDATED: Attach customer data AND hold data if it's a staff booking
+      if (isStaff) {
+        finalPayload = { ...finalPayload, ...customerData, ...holdData };
+      }
 
       const response = await api.post(endpoint, finalPayload);
       toast.success('Booking requested successfully!');
@@ -347,7 +343,15 @@ const [startTimeInput, setStartTimeInput] = useState('');
         <h1 className="text-3xl font-bold text-gray-900 mb-2">{facility.name}</h1>
         <p className="text-gray-600 leading-relaxed text-lg border-b pb-6 mb-6">{facility.description}</p>
         
-        {isStaff && <StaffBookingForm customerData={customerData} setCustomerData={setCustomerData} />}
+        {/* 🚨 UPDATED: Passing down holdData to StaffBookingForm */}
+        {isStaff && (
+          <StaffBookingForm 
+            customerData={customerData} 
+            setCustomerData={setCustomerData} 
+            holdData={holdData} 
+            setHoldData={setHoldData} 
+          />
+        )}
         
         <FacilityExtrasList 
           extraItems={extraItems} 
@@ -369,7 +373,7 @@ const [startTimeInput, setStartTimeInput] = useState('');
           startTimeInput={startTimeInput} setStartTimeInput={setStartTimeInput}
           
           bookingOption={bookingOption} setBookingOption={safeSetBookingOption}
-          selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot} // PASSING NEW DYNAMIC STATE
+          selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot}
           
           formData={formData} handleChange={handleChange} 
           handleCheckAvailability={handleCheckAvailability} handleBookNow={handleBookNow} 

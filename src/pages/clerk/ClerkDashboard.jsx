@@ -4,7 +4,7 @@ import api from '../../api/axios';
 import { toast } from 'react-toastify';
 import useAuthStore from '../../store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
-
+import socket from '../../api/socket';
 // Import our new components
 import BookingTable from './components/BookingTable';
 import CheckInModal from './components/CheckInModal';
@@ -29,7 +29,22 @@ export default function ClerkDashboard() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
 
-  useEffect(() => { fetchBookings(); }, []);
+ useEffect(() => { 
+    fetchBookings(); 
+    const autoRefresh = () => fetchBookings();
+
+    // Matching exactly what your backend sends
+    socket.on('new_booking_request', autoRefresh);
+    socket.on('booking_status_updated', autoRefresh);
+    socket.on('invoice_status_updated', autoRefresh); // Refresh when admin approves/rejects their draft
+
+    return () => {
+      socket.off('new_booking_request', autoRefresh);
+      socket.off('booking_status_updated', autoRefresh);
+      socket.off('invoice_status_updated', autoRefresh);
+    };
+  }, []);
+
 
   const fetchBookings = async () => {
     try {

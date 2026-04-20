@@ -100,18 +100,25 @@ const FacilityCard = ({ facility, index, navigate, isAuthenticated }) => {
           </div>
           <p className="text-gray-500 text-sm mt-2 line-clamp-2">{facility.description}</p>
           
-          {facility.pricingDetails?.included_facilities && (
-            <div className="flex flex-wrap gap-2 mt-4">
-              {facility.pricingDetails.included_facilities.slice(0, 3).map((inc, i) => (
-                <span key={i} className="flex items-center gap-1 text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded">
-                  <Check size={12} className="text-green-600"/> {inc}
-                </span>
-              ))}
-              {facility.pricingDetails.included_facilities.length > 3 && (
-                <span className="text-xs text-blue-600 font-semibold bg-blue-50 px-2 py-1 rounded">+{facility.pricingDetails.included_facilities.length - 3} more</span>
-              )}
-            </div>
-          )}
+        {/* ✅ CORRECTED CODE */}
+{facility.pricingDetails?.included_facilities && (
+  <div className="flex flex-wrap gap-2 mt-4">
+    {facility.pricingDetails.included_facilities.slice(0, 3).map((inc, i) => {
+      // Handle both Object {name, quantity} AND old plain string formats safely
+      const itemName = typeof inc === 'object' ? inc.name : inc;
+      const itemQty = typeof inc === 'object' && inc.quantity > 1 ? ` (x${inc.quantity})` : '';
+      
+      return (
+        <span key={i} className="flex items-center gap-1 text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded">
+          <Check size={12} className="text-green-600"/> {itemName}{itemQty}
+        </span>
+      );
+    })}
+    {facility.pricingDetails.included_facilities.length > 3 && (
+      <span className="text-xs text-blue-600 font-semibold bg-blue-50 px-2 py-1 rounded">+{facility.pricingDetails.included_facilities.length - 3} more</span>
+    )}
+  </div>
+)}
         </div>
 
         <div className="mt-4 flex justify-between items-end border-t pt-4">

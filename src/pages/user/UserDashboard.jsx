@@ -7,37 +7,42 @@ import { loadRazorpayScript } from '../../utils/loadRazorpay';
 import InvoicePrintView from '../../components/InvoicePrintView';
 import CancelBookingModal from '../../components/booking/CancelBookingModal';
 
-// Helper to format dates nicely
 const formatDate = (dateString) => {
+  if (!dateString) return 'N/A';
   const options = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
   return new Date(dateString).toLocaleDateString('en-IN', options);
 };
 
-// Helper for Status Badges
 const StatusBadge = ({ status }) => {
   const styles = {
     PENDING_CLERK_REVIEW: 'bg-yellow-100 text-yellow-800 border-yellow-200',
     PENDING_ADMIN_APPROVAL: 'bg-orange-100 text-orange-800 border-orange-200',
-    PENDING_ADVANCE_PAYMENT: 'bg-blue-100 text-blue-800 border-blue-200 animate-pulse',
+    PENDING_PAYMENT: 'bg-blue-100 text-blue-800 border-blue-200 animate-pulse',
     AWAITING_CASH_PAYMENT: 'bg-purple-100 text-purple-800 border-purple-200 animate-pulse',
+    ON_HOLD: 'bg-indigo-100 text-indigo-800 border-indigo-200',
     CONFIRMED: 'bg-green-100 text-green-800 border-green-200',
+    CHECKED_IN: 'bg-teal-100 text-teal-800 border-teal-200',
+    CHECKED_OUT: 'bg-gray-200 text-gray-800 border-gray-300',
     REJECTED: 'bg-red-100 text-red-800 border-red-200',
     CANCELLED: 'bg-gray-100 text-gray-800 border-gray-200',
+    PENDING_CANCELLATION: 'bg-orange-100 text-orange-800 border-orange-200 animate-pulse',
   };
 
   const labels = {
     PENDING_CLERK_REVIEW: 'Under Clerk Review',
     PENDING_ADMIN_APPROVAL: 'Awaiting Admin Approval',
-    PENDING_ADVANCE_PAYMENT: 'Action Required: Pay Advance',
+    PENDING_PAYMENT: 'Action Required: Make Payment',
     AWAITING_CASH_PAYMENT: 'Awaiting Cash at Desk',
+    ON_HOLD: 'Dates On Hold (Balance Pending)',
     CONFIRMED: 'Confirmed',
     REJECTED: 'Rejected',
     CANCELLED: 'Cancelled',
+    PENDING_CANCELLATION: 'Cancellation Processing',
   };
 
   return (
     <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${styles[status] || styles.CANCELLED}`}>
-      {labels[status] || status}
+      {labels[status] || status.replace(/_/g, ' ')}
     </span>
   );
 };
@@ -52,9 +57,7 @@ export default function UserDashboard() {
   const [bookingToCancel, setBookingToCancel] = useState(null);
   const [processingPaymentId, setProcessingPaymentId] = useState(null); 
   
-  // NEW: State to track which payment mode the user wants to view for each booking
   const [paymentPreferences, setPaymentPreferences] = useState({});
-
   const { user } = useAuthStore();
 
   useEffect(() => {
@@ -94,8 +97,7 @@ export default function UserDashboard() {
     }
   };
 
-  // --- RAZORPAY PAYMENT HANDLER ---
-  const handlePayment = async (bookingId, paymentType) => {
+  const handlePayment = async (bookingId, paymentPhase, paymentOption = 'FULL') => {
     setProcessingPaymentId(bookingId);
 
     const isScriptLoaded = await loadRazorpayScript();
@@ -105,15 +107,12 @@ export default function UserDashboard() {
     }
 
     try {
-      const createOrderUrl = paymentType === 'ADVANCE' 
-        ? '/payments/advance/create-order' 
-        : '/payments/remaining/create-order';
-      
-      const verifyOrderUrl = paymentType === 'ADVANCE' 
-        ? '/payments/advance/verify' 
-        : '/payments/remaining/verify';
+      const createOrderUrl = paymentPhase === 'INITIAL' ? '/payments/initial/create-order' : '/payments/remaining/create-order';
+      const verifyOrderUrl = paymentPhase === 'INITIAL' ? '/payments/initial/verify' : '/payments/remaining/verify';
 
-      const orderResponse = await api.post(createOrderUrl, { bookingId });
+      const payload = paymentPhase === 'INITIAL' ? { bookingId, paymentOption } : { bookingId };
+
+      const orderResponse = await api.post(createOrderUrl, payload);
       const orderData = orderResponse.data.data;
 
       const options = {
@@ -121,7 +120,7 @@ export default function UserDashboard() {
         amount: orderData.amount,
         currency: orderData.currency,
         name: 'Maharashtra Mandal Raipur',
-        description: `${paymentType === 'ADVANCE' ? 'Advance' : 'Balance'} Payment`,
+        description: `${paymentPhase === 'INITIAL' ? (paymentOption === 'HOLD' ? 'Hold' : 'Full') : 'Balance'} Payment`,
         order_id: orderData.orderId,
         
         handler: async function (response) {
@@ -136,7 +135,7 @@ export default function UserDashboard() {
             });
             
             toast.dismiss('verify-toast');
-            toast.success(`🎉 ${paymentType === 'ADVANCE' ? 'Advance' : 'Balance'} payment successful!`);
+            toast.success(`🎉 Payment successful!`);
             fetchMyBookings();
           } catch (err) {
             toast.dismiss('verify-toast');
@@ -150,9 +149,7 @@ export default function UserDashboard() {
           contact: user.mobile,
           email: user.email || ''
         },
-        theme: {
-          color: '#e53e3e',
-        },
+        theme: { color: '#e53e3e' },
         modal: {
           ondismiss: function() {
             setProcessingPaymentId(null);
@@ -195,7 +192,6 @@ export default function UserDashboard() {
         <div className="space-y-6">
           {bookings.map((booking) => {
             
-            // Derive the locally selected payment mode for this specific booking card
             const selectedMode = paymentPreferences[booking.id] || 'ONLINE';
 
             return (
@@ -231,45 +227,50 @@ export default function UserDashboard() {
 
                 {/* Right Side: Financials & Actions */}
                 <div className="p-6 md:w-1/3 bg-gray-50 flex flex-col justify-center">
-                <div className="space-y-2 mb-6">
+                  <div className="space-y-2 mb-6">
                     {/* Calculations */}
                     {(() => {
                       const base = Number(booking.financials?.calculatedAmount || 0);
                       const deposit = Number(booking.financials?.securityDeposit || 0);
-                      const totalCost = base + deposit;
-                      const advance = Number(booking.financials?.advanceAmountRequested) || 0;
                       
+                      const advancePaid = Number(booking.financials?.holdAmountPaid || booking.financials?.advanceAmountRequested || 0);
                       const isPartial = booking.financials?.paymentStatus === 'PARTIAL';
                       const isCompleted = booking.financials?.paymentStatus === 'COMPLETED';
                       
-                      const amountPaid = isCompleted ? totalCost : (isPartial ? advance : 0);
-                      const amountDue = totalCost - amountPaid;
+                      // MATH UPDATED: Amount Paid and Amount Due only apply to the base rent online
+                      const amountPaid = isCompleted ? base : (isPartial ? advancePaid : 0);
+                      const amountDue = base - amountPaid;
 
                       return (
                         <>
                           <div className="flex justify-between text-sm text-gray-500">
-                            <span>Base Quote:</span>
-                            <span>₹{base.toLocaleString('en-IN')}</span>
-                          </div>
-                          <div className="flex justify-between text-sm text-gray-500 border-b pb-2">
-                            <span>Deposit:</span>
-                            <span>₹{deposit.toLocaleString('en-IN')}</span>
-                          </div>
-                          <div className="flex justify-between font-bold text-gray-800 pt-1">
-                            <span>Total Amount:</span>
-                            <span>₹{totalCost.toLocaleString('en-IN')}</span>
+                            <span>Base Quote (Rent):</span>
+                            <span className="font-bold text-gray-900">₹{base.toLocaleString('en-IN')}</span>
                           </div>
                           
-                          {booking.financials?.advanceAmountRequested && (
+                          <div className="flex justify-between text-sm text-orange-600 border-b border-gray-200 pb-2">
+                            <span>Security Deposit:</span>
+                            <span className="font-semibold">₹{deposit.toLocaleString('en-IN')}</span>
+                          </div>
+
+                          <div className="mt-2 p-2 bg-orange-50 rounded border border-orange-200 mb-3">
+                            <p className="text-[11px] text-orange-800 font-medium leading-tight text-center">
+                              * Security deposit of ₹{deposit.toLocaleString('en-IN')} is collected separately at check-in.
+                            </p>
+                          </div>
+                          
+                          {(isPartial || isCompleted) && (
                             <div className="mt-3 p-3 bg-white border rounded-md shadow-sm space-y-1">
                               <div className="flex justify-between text-sm">
-                                <span className="text-green-600 font-semibold">Amount Paid:</span>
+                                <span className="text-green-600 font-semibold">Rent Paid:</span>
                                 <span className="text-green-600 font-bold">₹{amountPaid.toLocaleString('en-IN')}</span>
                               </div>
-                              <div className="flex justify-between text-sm">
-                                <span className="text-red-600 font-semibold">Remaining Due:</span>
-                                <span className="text-red-600 font-bold">₹{amountDue.toLocaleString('en-IN')}</span>
-                              </div>
+                              {amountDue > 0 && (
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-red-600 font-semibold">Remaining Rent Due:</span>
+                                  <span className="text-red-600 font-bold">₹{amountDue.toLocaleString('en-IN')}</span>
+                                </div>
+                              )}
                             </div>
                           )}
                         </>
@@ -284,13 +285,13 @@ export default function UserDashboard() {
                     </div>
                   )}
 
-                  {/* --- 🚀 ADVANCE PAYMENT BLOCK WITH ONLINE/OFFLINE TOGGLE --- */}
-                  {booking.status === 'PENDING_ADVANCE_PAYMENT' && (
-                    <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  {/* --- INITIAL PAYMENT BLOCK WITH ONLINE/OFFLINE TOGGLE --- */}
+                  {booking.status === 'PENDING_PAYMENT' && (
+                    <div className="mt-1 p-4 bg-blue-50 rounded-lg border border-blue-200">
                       {!booking.verification?.aadharFrontImageUrl ? (
                         <div>
                           <h4 className="font-bold text-blue-800 mb-2">Upload KYC to Enable Payment</h4>
-                          <p className="text-sm text-gray-600 mb-3">As per management rules, please upload your Aadhaar card to proceed with the online advance payment.</p>
+                          <p className="text-sm text-gray-600 mb-3">As per management rules, please upload your Aadhaar card to proceed with the payment.</p>
                           
                           <div className="flex flex-col sm:flex-row gap-3 mb-3">
                             <div className="flex-1">
@@ -335,26 +336,41 @@ export default function UserDashboard() {
 
                           {/* RENDER BASED ON TOGGLE */}
                           {selectedMode === 'ONLINE' ? (
-                            <button 
-                              onClick={() => handlePayment(booking.id, 'ADVANCE')} 
-                              disabled={processingPaymentId === booking.id}
-                              className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
-                            >
-                              {processingPaymentId === booking.id ? (
-                                <><Loader2 size={18} className="animate-spin" /> Processing...</>
-                              ) : (
-                                <><CreditCard size={18} /> Pay Advance (₹{booking.financials?.advanceAmountRequested})</>
+                            <div className="space-y-3 mt-4">
+                              {/* 🚨 MATH UPDATED: OPTION 1: PAY FULL RENT ONLY */}
+                              <button 
+                                onClick={() => handlePayment(booking.id, 'INITIAL', 'FULL')} 
+                                disabled={processingPaymentId === booking.id}
+                                className="w-full flex items-center justify-between py-3 px-4 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
+                              >
+                                <span><CreditCard size={18} className="inline mr-2" /> Pay Rent Full</span>
+                                <span>₹{Number(booking.financials?.calculatedAmount).toLocaleString('en-IN')}</span>
+                              </button>
+
+                              {/* 🚨 MATH UPDATED: OPTION 2: HOLD (Percentage of Rent ONLY) */}
+                              {booking.financials?.isHoldingAllowed && (
+                                 <button 
+                                   onClick={() => handlePayment(booking.id, 'INITIAL', 'HOLD')} 
+                                   disabled={processingPaymentId === booking.id}
+                                   className="w-full flex items-center justify-between py-3 px-4 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
+                                 >
+                                   <div className="text-left">
+                                      <span className="block"><CreditCard size={18} className="inline mr-2" /> Hold Dates ({booking.financials.holdingPercentage}%)</span>
+                                      <span className="text-xs text-indigo-200 font-normal">Balance due in {booking.financials.holdingValidityDays} days</span>
+                                   </div>
+                                   <span>₹{(Number(booking.financials?.calculatedAmount) * (Number(booking.financials.holdingPercentage) / 100)).toLocaleString('en-IN')}</span>
+                                 </button>
                               )}
-                            </button>
+                            </div>
                           ) : (
                             <div className="bg-white border border-gray-200 p-4 rounded-lg text-center shadow-sm">
                               <Banknote size={24} className="mx-auto text-green-600 mb-2" />
                               <h4 className="font-bold text-gray-800">Pay Cash at Desk</h4>
                               <p className="text-sm text-gray-600 mt-1 leading-relaxed">
-                                Please visit the Bhavan Clerk Desk to pay the advance of <strong>₹{booking.financials?.advanceAmountRequested}</strong> in cash.
+                                Please visit the Bhavan Clerk Desk to make your payment in cash.
                               </p>
                               <p className="text-xs text-red-500 mt-3 font-semibold bg-red-50 py-1.5 px-2 rounded">
-                                ⏳ Auto-cancels if unpaid in 24 hours.
+                                ⏳ Auto-cancels if unpaid before deadline.
                               </p>
                             </div>
                           )}
@@ -364,9 +380,13 @@ export default function UserDashboard() {
                   )}
 
                   {/* --- REMAINING BALANCE BLOCK --- */}
-                  {booking.status === 'CONFIRMED' && booking.financials?.paymentStatus === 'PARTIAL' && (
+                  {booking.status === 'ON_HOLD' && booking.financials?.paymentStatus === 'PARTIAL' && (
                     <div className="mt-4">
-                      <p className="text-xs text-gray-500 font-bold uppercase mb-2">Final Settlement</p>
+                      {booking.financials?.holdDeadline && (
+                        <p className="text-xs text-red-500 font-bold uppercase mb-2">
+                          ⚠️ Balance due by {formatDate(booking.financials.holdDeadline)}
+                        </p>
+                      )}
                       <button 
                         onClick={() => handlePayment(booking.id, 'REMAINING')}
                         disabled={processingPaymentId === booking.id}
@@ -383,14 +403,48 @@ export default function UserDashboard() {
 
                   <div className="mt-2 border-t pt-1"></div>
 
-                  {/* CANCEL BUTTON */}
-                  {booking.status === 'CONFIRMED' && new Date(booking.schedule.startTime) > new Date() && (
-                    <button 
-                      onClick={() => setBookingToCancel(booking)}
-                      className="w-full mt-3 flex items-center justify-center gap-2 py-2 px-4 border-2 border-red-500 text-red-600 rounded-lg font-semibold hover:bg-red-50 transition shadow-sm"
-                    >
-                      <AlertCircle size={18} /> Cancel Booking
-                    </button>
+                  {/* 1. CANCEL BUTTON LOGIC */}
+                  {
+                    !['PENDING_CANCELLATION', 'CANCELLED', 'REJECTED', 'CHECKED_IN', 'CHECKED_OUT'].includes(booking.status) && 
+                    new Date(booking.schedule.startTime) > new Date() && 
+                    (
+                      <button 
+                        onClick={() => setBookingToCancel(booking)}
+                        className="w-full mt-3 flex items-center justify-center gap-2 py-2 px-4 border-2 border-red-500 text-red-600 rounded-lg font-semibold hover:bg-red-50 transition shadow-sm"
+                      >
+                        <AlertCircle size={18} /> Cancel Booking
+                      </button>
+                    )
+                  }
+
+                  {/* 2. CANCELLATION SUMMARY */}
+                  {['PENDING_CANCELLATION', 'CANCELLED'].includes(booking.status) && (
+                    <div className="mt-4 bg-gray-100 border border-gray-200 p-4 rounded-lg">
+                      <h4 className="font-bold text-gray-800 flex items-center gap-2 mb-2">
+                        <AlertCircle size={18} className="text-gray-500" />
+                        Cancellation Summary
+                      </h4>
+                      <p className="text-sm text-gray-600 mb-3">
+                        Your booking cancellation has been requested. As per policy, you are eligible for a <strong>₹{booking.financials?.refundAmount || 0}</strong> refund.
+                      </p>
+
+                      {booking.financials?.refundAmount > 0 && booking.financials?.paymentStatus === 'REFUNDED' ? (
+                        <div className="bg-green-50 text-green-700 p-3 rounded-md text-sm font-semibold flex items-center gap-2 border border-green-200">
+                          <CheckCircle size={16} /> Refund Processed Successfully
+                        </div>
+                      ) : booking.financials?.refundAmount > 0 ? (
+                        <div className="bg-orange-50 text-orange-800 p-3 rounded-md text-sm font-semibold flex items-center gap-2 border border-orange-200">
+                          <Clock size={16} /> Refund Pending Admin Verification
+                          <span className="block text-xs font-normal mt-1 text-orange-700">
+                            Once approved by the Admin, online payments will be credited in 3-5 days. Cash payments must be collected at the desk.
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="bg-gray-200 text-gray-700 p-3 rounded-md text-sm font-semibold">
+                          No refund applicable for this cancellation.
+                        </div>
+                      )}
+                    </div>
                   )}
                   
                   {(booking.status === 'PENDING_CLERK_REVIEW' || booking.status === 'PENDING_ADMIN_APPROVAL') && (
@@ -402,7 +456,7 @@ export default function UserDashboard() {
                   
                   {booking.status === 'CONFIRMED' && booking.financials?.paymentStatus === 'COMPLETED' && (
                     <div className="flex items-center justify-center gap-2 text-sm font-bold text-green-700 bg-green-100 p-3 rounded-md mt-4">
-                      <CheckCircle size={18} /> Paid in Full
+                      <CheckCircle size={18} /> Rent Paid in Full
                     </div>
                   )}
 

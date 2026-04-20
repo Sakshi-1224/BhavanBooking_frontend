@@ -58,12 +58,7 @@ export default function RemainingPaymentModal({ booking, onClose, onSuccess }) {
             </select>
           </div>
 
-          {paymentMode === 'QR' && (
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Transaction Ref ID</label>
-              <input type="text" required value={transactionId} onChange={(e) => setTransactionId(e.target.value)} className="w-full border p-2 rounded" placeholder="e.g. UPI Ref Number" />
-            </div>
-          )}
+         
 
           <div className="pt-4">
             <button type="submit" disabled={isProcessing} className="w-full py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 disabled:opacity-50">

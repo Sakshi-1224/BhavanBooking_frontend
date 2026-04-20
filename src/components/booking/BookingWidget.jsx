@@ -188,13 +188,24 @@ export default function BookingWidget({
 
         {availability && availability.isAvailable && (
           <div className="animate-fade-in">
-            <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-4">
-              <p className="text-green-800 font-bold flex justify-between">
-                <span>Total Amount:</span> 
-                <span className="text-xl">₹{availability.pricing?.estimatedTotal?.toLocaleString('en-IN') || 0}</span>
-              </p>
-              <p className="text-green-600 text-sm mt-1">Includes ₹{availability.pricing?.securityDepositRequired || 0} security deposit.</p>
+            {/* 🚨 CHANGED: Updated UI to clearly separate Rent vs Security Deposit */}
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-4 space-y-2">
+              <div className="flex justify-between items-center text-gray-800">
+                <span className="font-semibold text-sm">Amount Due Now (Rent):</span>
+                <span className="font-bold">₹{availability.pricing?.baseCalculatedAmount?.toLocaleString('en-IN') || 0}</span>
+              </div>
+              <div className="flex justify-between items-center text-orange-700">
+                <span className="font-semibold text-sm">Security Deposit (Pay at Check-in):</span>
+                <span className="font-bold">₹{availability.pricing?.securityDepositRequired?.toLocaleString('en-IN') || 0}</span>
+              </div>
+              <div className="border-t border-green-200 pt-2 mt-2">
+                <p className="text-green-900 font-extrabold flex justify-between items-center">
+                  <span>Estimated Total:</span>
+                  <span className="text-xl">₹{availability.pricing?.estimatedTotal?.toLocaleString('en-IN') || 0}</span>
+                </p>
+              </div>
             </div>
+            
             <button 
               onClick={() => handleBookNow(false)} 
               disabled={isSubmitting} 

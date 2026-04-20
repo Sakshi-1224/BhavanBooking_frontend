@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle, Shield, LogOut, X, Eye, FileText, AlertTriangle, Settings, Plus } from 'lucide-react';
+import { CheckCircle, Shield, LogOut, X, Eye, FileText, AlertTriangle, Settings, Plus, CreditCard } from 'lucide-react';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
 import useAuthStore from '../../store/useAuthStore';
@@ -9,7 +9,9 @@ import InvoicePrintView from '../../components/InvoicePrintView';
 import AdminProfileModal from './AdminProfileModal'; 
 import ReportsView from './ReportsView';
 import AdminFacilitiesView from './AdminFacilitiesView';
+import socket from '../../api/socket';
 import BookingDetailsModal from '../../components/booking/BookingDetailsModal';
+
 const formatDate = (dateString) => {
   if (!dateString) return 'N/A';
   const options = { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
@@ -22,17 +24,19 @@ export default function AdminDashboard() {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   
+  // --- APPROVAL MODAL STATES ---
   const [approvingBooking, setApprovingBooking] = useState(null);
-  const [advanceAmount, setAdvanceAmount] = useState('');
   const [totalAmount, setTotalAmount] = useState(''); 
+  const [overrideSecurityDeposit, setOverrideSecurityDeposit] = useState('');
+  const [isHoldingAllowed, setIsHoldingAllowed] = useState(false);
+  const [holdingPercentage, setHoldingPercentage] = useState(20);
+  const [holdingValidityDays, setHoldingValidityDays] = useState(7);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
+  // --- INVOICE / DETAILS STATES ---
   const [invoiceModal, setInvoiceModal] = useState(null);
   const [invoiceRemarks, setInvoiceRemarks] = useState('');
-
   const [viewingDetails, setViewingDetails] = useState(null);
-  const [detailsLoading, setDetailsLoading] = useState(false);
-
   const [showProfileModal, setShowProfileModal] = useState(false);
 
   const { user, logout } = useAuthStore();
@@ -40,6 +44,19 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     fetchBookings();
+    const autoRefresh = () => fetchBookings();
+
+    socket.on('new_booking_request', autoRefresh);
+    socket.on('new_walkin_booking', autoRefresh);
+    socket.on('booking_status_updated', autoRefresh);
+    socket.on('new_invoice_draft', autoRefresh);
+
+    return () => {
+      socket.off('new_booking_request', autoRefresh);
+      socket.off('new_walkin_booking', autoRefresh);
+      socket.off('booking_status_updated', autoRefresh);
+      socket.off('new_invoice_draft', autoRefresh);
+    };
   }, []);
 
   const fetchBookings = async () => {
@@ -53,29 +70,62 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleOpenApproveModal = (booking) => {
+  const handleProcessRefund = async (booking) => {
+    const amount = booking.financials?.refundAmount || 0;
+    const isOnline = booking.financials?.razorpayPaymentIds?.length > 0;
+    const mode = isOnline ? 'Online (Automatic Razorpay Refund)' : 'Manual (Cash handed at desk)';
+
+    if (!window.confirm(`Are you sure you want to approve this cancellation and process a refund of ₹${amount} via ${mode}?`)) return;
+    
+    try {
+      await api.patch(`/bookings/${booking.id}/process-refund`);
+      toast.success('Cancellation approved and refund processed successfully!');
+      fetchBookings();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to process refund');
+    }
+  };
+
+ const handleOpenApproveModal = (booking) => {
     setApprovingBooking(booking);
     const financials = booking.financials || {};
     const baseCalculated = Number(financials.calculatedAmount) || 0;
     const security = Number(financials.securityDeposit) || 0;
     
     setTotalAmount(baseCalculated.toString());
-    const suggestedAdvance = Math.round((baseCalculated * 0.20) + security);
-    setAdvanceAmount(suggestedAdvance.toString());
+    setOverrideSecurityDeposit(security.toString());
+    
+    // 🚨 FIX: Pre-fill the modal with the Clerk's requested hold settings!
+    // This prevents the Admin from accidentally overwriting the walk-in's preference.
+    setIsHoldingAllowed(financials.isHoldingAllowed || false);
+    setHoldingPercentage(financials.holdingPercentage || 20);
+    setHoldingValidityDays(financials.holdingValidityDays || 7);
   };
 
   const handleConfirmApproval = async (e) => {
     e.preventDefault();
-    if (!advanceAmount || Number(advanceAmount) <= 0) return toast.warn('Please enter a valid advance amount.');
     if (Number(totalAmount) < 0) return toast.warn('Total amount cannot be negative.');
+    if (Number(overrideSecurityDeposit) < 0) return toast.warn('Security deposit cannot be negative.');
+    
+    if (isHoldingAllowed) {
+      if (Number(holdingPercentage) <= 0 || Number(holdingPercentage) > 100) return toast.warn('Holding percentage must be between 1 and 100.');
+      if (Number(holdingValidityDays) <= 0) return toast.warn('Holding validity days must be greater than 0.');
+    }
 
     setIsSubmitting(true);
     try {
-      await api.patch(`/auth/admin/bookings/${approvingBooking.id}/approve`, {
-        advanceAmountRequested: Number(advanceAmount),
-        revisedTotalAmount: Number(totalAmount)
-      });
-      toast.success('Booking approved! User notified to pay advance.');
+      const payload = {
+        revisedTotalAmount: Number(totalAmount),
+        overrideSecurityDeposit: Number(overrideSecurityDeposit),
+        isHoldingAllowed,
+        ...(isHoldingAllowed && {
+          holdingPercentage: Number(holdingPercentage),
+          holdingValidityDays: Number(holdingValidityDays),
+        })
+      };
+
+      await api.patch(`/auth/admin/bookings/${approvingBooking.id}/approve`, payload);
+      toast.success('Booking approved! User notified to pay.');
       setApprovingBooking(null);
       fetchBookings(); 
     } catch (error) {
@@ -132,26 +182,12 @@ export default function AdminDashboard() {
     }
   };
 
-  const fetchBookingDetails = async (id) => {
-    setDetailsLoading(true);
+  const handleLogout = async () => {
     try {
-      const response = await api.get(`/auth/admin/bookings/${id}`);
-      setViewingDetails(response.data.data);
-    } catch (error) {
-      toast.error('Failed to fetch detailed booking info');
-    } finally {
-      setDetailsLoading(false);
-    }
-  };
-
- const handleLogout = async () => {
-    try {
-      // 1. Tell the backend to destroy the httpOnly cookie
       await api.post('/auth/user/logout'); 
     } catch (error) {
       console.error("Failed to clear cookie on backend", error);
     } finally {
-      // 2. Clear frontend state and redirect regardless of API success
       logout();
       navigate('/admin/login');
     }
@@ -160,6 +196,10 @@ export default function AdminDashboard() {
   const filteredBookings = bookings.filter((b) => {
     if (activeTab === 'ALL') return true;
     if (activeTab === 'CHECKED_IN') return b.status === 'CHECKED_IN' || b.status === 'CHECKED_OUT';
+    if (activeTab === 'PENDING_REFUNDS') {
+      return b.status === 'PENDING_CANCELLATION' || 
+             (b.status === 'CANCELLED' && b.financials?.refundAmount > 0 && b.financials?.paymentStatus !== 'REFUNDED');
+    }
     return b.status === activeTab;
   });
 
@@ -191,14 +231,10 @@ export default function AdminDashboard() {
             <button onClick={() => setActiveTab('PENDING_ADMIN_APPROVAL')} className={`px-4 py-2 text-sm font-medium rounded-md transition whitespace-nowrap ${activeTab === 'PENDING_ADMIN_APPROVAL' ? 'bg-red-100 text-red-800' : 'text-gray-600 hover:bg-gray-50'}`}>Needs Approval</button>
             <button onClick={() => setActiveTab('CHECKED_IN')} className={`px-4 py-2 text-sm font-medium rounded-md transition whitespace-nowrap ${activeTab === 'CHECKED_IN' ? 'bg-orange-100 text-orange-800' : 'text-gray-600 hover:bg-gray-50'}`}>Active / Check-Outs</button>
             <button onClick={() => setActiveTab('ALL')} className={`px-4 py-2 text-sm font-medium rounded-md transition whitespace-nowrap ${activeTab === 'ALL' ? 'bg-gray-200 text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}>All Bookings</button>
+            <button onClick={() => setActiveTab('PENDING_REFUNDS')} className={`px-4 py-2 text-sm font-medium rounded-md transition whitespace-nowrap ${activeTab === 'PENDING_REFUNDS' ? 'bg-red-100 text-red-800' : 'text-gray-600 hover:bg-gray-50'}`}>Pending Refunds</button>
             <button onClick={() => setActiveTab('STAFF')} className={`px-4 py-2 text-sm font-medium rounded-md transition whitespace-nowrap ${activeTab === 'STAFF' ? 'bg-blue-100 text-blue-800' : 'text-gray-600 hover:bg-gray-50'}`}>Staff</button>
             <button onClick={() => setActiveTab('REPORTS')} className={`px-4 py-2 text-sm font-medium rounded-md transition whitespace-nowrap ${activeTab === 'REPORTS' ? 'bg-indigo-100 text-indigo-800' : 'text-gray-600 hover:bg-gray-50'}`}>Reports & Analytics</button>
-            <button 
-  onClick={() => setActiveTab('FACILITIES')} 
-  className={`px-4 py-2 text-sm font-medium rounded-md transition whitespace-nowrap ${activeTab === 'FACILITIES' ? 'bg-purple-100 text-purple-800' : 'text-gray-600 hover:bg-gray-50'}`}
->
-  Manage Facilities
-</button>
+            <button onClick={() => setActiveTab('FACILITIES')} className={`px-4 py-2 text-sm font-medium rounded-md transition whitespace-nowrap ${activeTab === 'FACILITIES' ? 'bg-purple-100 text-purple-800' : 'text-gray-600 hover:bg-gray-50'}`}>Manage Facilities</button>
           </div>
         </div>
 
@@ -207,8 +243,8 @@ export default function AdminDashboard() {
         ) : activeTab === 'REPORTS' ? (
           <ReportsView />
         ) : activeTab === 'FACILITIES' ? (
-  <AdminFacilitiesView />  
-): (
+          <AdminFacilitiesView />  
+        ): (
           <div className="bg-white shadow-sm rounded-lg border overflow-hidden">
              <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
@@ -250,6 +286,24 @@ export default function AdminDashboard() {
                                 </button>
                               )}
 
+                              {(booking.status === 'PENDING_CANCELLATION' || (booking.status === 'CANCELLED' && booking.financials?.refundAmount > 0 && booking.financials?.paymentStatus !== 'REFUNDED')) && (
+                                <div className="flex flex-col gap-2 min-w-[140px]">
+                                  <div className="bg-purple-50 text-purple-800 text-xs p-2 rounded border border-purple-200 shadow-inner">
+                                    <span className="block font-bold">Refund: ₹{booking.financials?.refundAmount || 0}</span>
+                                    <span className="block text-[10px] uppercase tracking-wider mt-0.5 font-semibold text-purple-600">
+                                      Mode: {booking.financials?.razorpayPaymentIds?.length > 0 ? 'Online Auto-Refund' : 'Manual Cash'}
+                                    </span>
+                                  </div>
+                                  <button 
+                                    onClick={() => handleProcessRefund(booking)} 
+                                    className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded text-xs font-semibold transition flex items-center justify-center gap-1 shadow-sm w-full"
+                                  >
+                                    <CreditCard size={14}/> 
+                                    Approve & Process
+                                  </button>
+                                </div>
+                              )}
+
                               {booking.status === 'CHECKED_OUT' && (
                                 <button 
                                   onClick={async () => {
@@ -263,7 +317,8 @@ export default function AdminDashboard() {
                                 </button>
                               )}
                               
-                              <button onClick={() => fetchBookingDetails(booking.id)} className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1.5 rounded text-xs transition flex items-center gap-1"><Eye size={14}/> Details</button>
+                              {/* 🚨 FIXED: Pass the local booking object directly instead of fetching */}
+                              <button onClick={() => setViewingDetails(booking)} className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1.5 rounded text-xs transition flex items-center gap-1"><Eye size={14}/> Details</button>
                             </td>
                           </tr>
                        )
@@ -280,7 +335,7 @@ export default function AdminDashboard() {
         onClose={() => setShowProfileModal(false)} 
       />
 
-   {/* DETAILED VIEW MODAL (Now using the shared component!) */}
+      {/* DETAILED VIEW MODAL */}
       {viewingDetails && (
         <BookingDetailsModal 
           booking={viewingDetails} 
@@ -294,23 +349,43 @@ export default function AdminDashboard() {
           <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md relative">
             <button onClick={() => setApprovingBooking(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X size={20} /></button>
             <h2 className="text-xl font-bold text-gray-900 mb-2">Admin Approval</h2>
-            <p className="text-sm text-gray-500 mb-6 border-b pb-4">Adjust pricing and set required advance payment.</p>
+            <p className="text-sm text-gray-500 mb-6 border-b pb-4">Adjust pricing and define payment holding rules.</p>
             
             <form onSubmit={handleConfirmApproval} className="space-y-4">
-              <div className="flex justify-between items-center bg-gray-50 p-3 rounded border text-sm">
-                <span className="font-semibold text-gray-700">Security Deposit:</span>
-                <span className="font-bold">₹{approvingBooking.financials?.securityDeposit || 0}</span>
-              </div>
-
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-1">Revised Base Amount (₹)</label>
                 <input type="number" required min="0" value={totalAmount} onChange={(e) => setTotalAmount(e.target.value)} className="w-full px-4 py-2 border rounded-md text-lg font-semibold focus:ring-red-500 focus:border-red-500" />
               </div>
 
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">Advance Amount Required (₹)</label>
-                <input type="number" required min="1" value={advanceAmount} onChange={(e) => setAdvanceAmount(e.target.value)} className="w-full px-4 py-2 border rounded-md text-lg font-semibold focus:ring-red-500 focus:border-red-500" />
+                <label className="block text-sm font-bold text-gray-700 mb-1">Security Deposit (₹)</label>
+                <input type="number" required min="0" value={overrideSecurityDeposit} onChange={(e) => setOverrideSecurityDeposit(e.target.value)} className="w-full px-4 py-2 border rounded-md text-lg font-semibold focus:ring-red-500 focus:border-red-500" />
               </div>
+
+              <div className="mt-4 border-t pt-4">
+                <label className="flex items-center gap-2 font-bold text-gray-800 cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={isHoldingAllowed} 
+                    onChange={(e) => setIsHoldingAllowed(e.target.checked)} 
+                    className="w-5 h-5 text-red-600 rounded focus:ring-red-500" 
+                  />
+                  Allow user to pay a partial amount to HOLD dates?
+                </label>
+              </div>
+
+              {isHoldingAllowed && (
+                <div className="grid grid-cols-2 gap-4 mt-3 bg-red-50 p-3 rounded-lg border border-red-100">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Hold Percentage (%)</label>
+                    <input type="number" required min="1" max="100" value={holdingPercentage} onChange={(e) => setHoldingPercentage(e.target.value)} className="w-full px-3 py-1.5 border rounded-md" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Validity (Days)</label>
+                    <input type="number" required min="1" value={holdingValidityDays} onChange={(e) => setHoldingValidityDays(e.target.value)} className="w-full px-3 py-1.5 border rounded-md" />
+                  </div>
+                </div>
+              )}
 
               <div className="pt-4 flex gap-3">
                 <button type="button" onClick={() => setApprovingBooking(null)} className="flex-1 py-2 bg-gray-100 text-gray-700 font-medium rounded-md hover:bg-gray-200 transition">Cancel</button>
@@ -323,7 +398,7 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* UPDATED: CHECK-OUT / INVOICE APPROVAL MODAL (TWO COLUMN LAYOUT) */}
+      {/* CHECK-OUT / INVOICE APPROVAL MODAL */}
       {invoiceModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-4xl relative max-h-[90vh] overflow-y-auto">
@@ -418,14 +493,14 @@ export default function AdminDashboard() {
                   const taxable = base + extras - discount;
 
                   const cgst = Number(inv.cgstAmount || 0);
-const sgst = Number(inv.sgstAmount || 0);
-const taxes = cgst + sgst;
+                  const sgst = Number(inv.sgstAmount || 0);
+                  const taxes = cgst + sgst;
 
-               const cgstRate = taxable > 0 ? Number(((cgst / taxable) * 100).toFixed(2)) : 0;
-const sgstRate = taxable > 0 ? Number(((sgst / taxable) * 100).toFixed(2)) : 0;
-const totalGstRate = cgstRate + sgstRate;
+                  const cgstRate = taxable > 0 ? Number(((cgst / taxable) * 100).toFixed(2)) : 0;
+                  const sgstRate = taxable > 0 ? Number(((sgst / taxable) * 100).toFixed(2)) : 0;
+                  const totalGstRate = cgstRate + sgstRate;
 
-const totalInvoiceAmount = Number(inv.totalAmount) || 0;
+                  const totalInvoiceAmount = Number(inv.totalAmount) || 0;
 
                   const utilities = Number(inv.electricityCharges || 0) + Number(inv.cleaningCharges || 0) + Number(inv.generatorCharges || 0);
                   const penalties = inv.damagesAndPenalties?.reduce((sum, p) => sum + Number(p.amount), 0) || 0;

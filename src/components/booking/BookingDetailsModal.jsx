@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, User, Phone, Mail, Calendar, Clock, CreditCard, ShieldCheck, Home, Info, CheckCircle } from 'lucide-react';
+import { X, User, Phone, Mail, Calendar, Clock, CreditCard, ShieldCheck, Home, Info, CheckCircle, AlertCircle } from 'lucide-react';
 
 const formatDate = (dateString) => {
   if (!dateString) return 'N/A';
@@ -32,10 +32,7 @@ export default function BookingDetailsModal({ booking, onClose }) {
 
   const base = Number(booking.financials?.calculatedAmount || 0);
   const deposit = Number(booking.financials?.securityDeposit || 0);
-  const totalCost = base + deposit;
   const advance = Number(booking.financials?.advanceAmountRequested || 0);
-  const isPaidInFull = booking.financials?.paymentStatus === 'COMPLETED';
-  const remaining = isPaidInFull ? 0 : totalCost - advance;
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
@@ -121,35 +118,92 @@ export default function BookingDetailsModal({ booking, onClose }) {
             </div>
 
             {/* Financials Card */}
-            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-              <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2"><CreditCard size={16}/> Financial Summary</h3>
+            <div className="bg-gray-50 p-5 rounded-xl border border-gray-200 shadow-sm">
+              <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <CreditCard size={18} className="text-blue-600" />
+                Financial Summary
+              </h4>
               
-              <div className="space-y-2 text-sm text-gray-600">
-                <div className="flex justify-between"><span>Base Rate:</span> <span>₹{base.toLocaleString('en-IN')}</span></div>
-                <div className="flex justify-between border-b pb-2"><span>Security Deposit:</span> <span>₹{deposit.toLocaleString('en-IN')}</span></div>
-                <div className="flex justify-between font-bold text-lg text-gray-900 pt-1"><span>Total Cost:</span> <span>₹{totalCost.toLocaleString('en-IN')}</span></div>
-              </div>
-
-              <div className="mt-4 pt-4 border-t space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="font-semibold text-gray-700">Advance Paid:</span>
-                  <span className="font-bold text-green-600">₹{advance.toLocaleString('en-IN')}</span>
+              <div className="space-y-3 text-sm">
+                <div className="flex justify-between text-gray-600">
+                  <span>Base Quote (Rent):</span>
+                  <span className="font-bold text-gray-900">₹{base.toLocaleString('en-IN')}</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="font-semibold text-gray-700">Remaining Balance:</span>
-                  <span className={`font-bold ${remaining > 0 ? 'text-red-600' : 'text-gray-400'}`}>₹{remaining.toLocaleString('en-IN')}</span>
+                <div className="flex justify-between text-orange-600 border-b border-gray-200 pb-3">
+                  <span>Security Deposit (Pay at Check-in):</span>
+                  <span className="font-bold">₹{deposit.toLocaleString('en-IN')}</span>
                 </div>
-              </div>
+                
+                <div className="flex justify-between font-bold text-gray-900 pt-1 text-lg">
+                  <span>Amount Payable Now:</span>
+                  <span className="text-blue-700">₹{base.toLocaleString('en-IN')}</span>
+                </div>
 
-              <div className="mt-4 flex items-center gap-2">
-                 <span className="text-xs font-bold uppercase text-gray-500">Payment Status:</span>
-                 <span className={`px-2 py-0.5 text-[10px] font-extrabold rounded uppercase ${
-                    booking.financials?.paymentStatus === 'COMPLETED' ? 'bg-green-100 text-green-800' : 
-                    booking.financials?.paymentStatus === 'PARTIAL' ? 'bg-yellow-100 text-yellow-800' : 
-                    'bg-red-100 text-red-800'
-                 }`}>
-                   {booking.financials?.paymentStatus || 'PENDING'}
-                 </span>
+                {/* 🚨 DISCLAIMER NOTE 🚨 */}
+                <div className="mt-3 bg-orange-100/50 p-3 rounded border border-orange-200">
+                  <p className="text-xs text-orange-800 font-medium leading-tight">
+                    * Note: The refundable security deposit of <strong className="font-bold">₹{deposit.toLocaleString('en-IN')}</strong> is not included in the online payment. It will be collected separately at the time of check-in at the desk.
+                  </p>
+                </div>
+
+                {/* ADVANCE & PAYMENT INFO */}
+                {advance > 0 && (
+                  <div className="mt-4 pt-4 border-t border-gray-200 space-y-2">
+                    <div className="flex justify-between text-gray-600">
+                      <span>Advance Required:</span>
+                      <span>₹{advance.toLocaleString('en-IN')}</span>
+                    </div>
+                    
+                    {/* Show Amount Paid if they have actually paid it */}
+                    {booking.financials?.paymentStatus !== 'PENDING' && (
+                      <div className="flex justify-between items-center text-green-700 font-bold bg-green-100/50 p-2.5 rounded-lg border border-green-200">
+                        <span>Amount Paid Upfront:</span>
+                        <span>₹{booking.financials?.paymentStatus === 'COMPLETED' ? 
+                          base.toLocaleString('en-IN') : 
+                          advance.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* CANCELLATION & REFUND BREAKDOWN */}
+                {['PENDING_CANCELLATION', 'CANCELLED'].includes(booking.status) && (
+                  <div className="mt-5 p-4 bg-red-50 border border-red-200 rounded-xl space-y-3">
+                    <h5 className="font-extrabold text-red-800 text-xs uppercase tracking-wider flex items-center gap-1 border-b border-red-200 pb-2">
+                      <AlertCircle size={14} /> Cancellation Settlement
+                    </h5>
+                    
+                    <div className="flex justify-between text-red-700 text-sm font-medium">
+                      <span>Cancellation Fee (Retained by Bhavan):</span>
+                      <span>₹{(advance - Number(booking.financials?.refundAmount || 0)).toLocaleString('en-IN')}</span>
+                    </div>
+                    
+                    <div className="flex justify-between text-green-700 font-bold text-base bg-white p-3 rounded-lg border border-green-200 mt-2 shadow-sm">
+                      <span>Refund Eligible Amount:</span>
+                      <span>₹{Number(booking.financials?.refundAmount || 0).toLocaleString('en-IN')}</span>
+                    </div>
+
+                    {/* STATUS OF THE REFUND */}
+                    <div className="pt-2 text-right">
+                      {booking.financials?.refundAmount > 0 ? (
+                        booking.financials?.paymentStatus === 'REFUNDED' ? (
+                          <span className="text-green-600 text-xs font-bold flex items-center justify-end gap-1 bg-green-100 px-2 py-1 rounded inline-flex">
+                            <CheckCircle size={14}/> REFUND COMPLETED
+                          </span>
+                        ) : (
+                          <span className="text-orange-600 text-xs font-bold flex items-center justify-end gap-1 bg-orange-100 px-2 py-1 rounded inline-flex">
+                            <Clock size={14}/> REFUND PENDING APPROVAL
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-gray-500 text-xs font-bold bg-gray-200 px-2 py-1 rounded inline-flex">
+                          NO REFUND APPLICABLE
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
