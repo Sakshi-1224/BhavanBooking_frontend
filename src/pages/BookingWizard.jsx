@@ -108,8 +108,8 @@ export default function BookingWizard() {
     }
   }
 
-  // -----------------------------------------------------------------------------------
-  // 🚀 THE DYNAMIC TIME CALCULATION ENGINE
+// -----------------------------------------------------------------------------------
+  // 🚀 THE DYNAMIC TIME CALCULATION ENGINE (UPDATED WITH 10 AM - 8 AM DEFAULTS)
   // -----------------------------------------------------------------------------------
   useEffect(() => {
     if (!startDate || !facility) return;
@@ -125,7 +125,7 @@ export default function BookingWizard() {
       if (isOnlyMiniHall) {
         if (startDate) {
           finalStart = new Date(startDate);
-          finalEnd = new Date(startDate); // End date is the same calendar day!
+          finalEnd = new Date(startDate); 
           finalStart.setHours(18, 0);     // 6:00 PM
           finalEnd.setHours(23, 0);       // 11:00 PM
           isValid = true;
@@ -134,8 +134,13 @@ export default function BookingWizard() {
         if (startDate && endDate) {
           finalStart = new Date(startDate);
           finalEnd = new Date(endDate);
-          if (hasRoom) { finalStart.setHours(10, 0); finalEnd.setHours(8, 0); }
-          else { finalStart.setHours(8, 0); finalEnd.setHours(8, 0); }
+          if (hasRoom) { 
+            finalStart.setHours(10, 0); 
+            finalEnd.setHours(8, 0); 
+          } else { 
+            finalStart.setHours(8, 0); 
+            finalEnd.setHours(8, 0); 
+          }
           isValid = true;
         }
       }
@@ -152,23 +157,33 @@ export default function BookingWizard() {
           if (startDate && startTimeInput) {
             const duration = Number(facility.pricingDetails.durationHours) || 1;
             finalStart = createDate(startDate, startTimeInput);
-            finalEnd = new Date(finalStart.getTime()); // Exact clone
+            finalEnd = new Date(finalStart.getTime());
             finalEnd.setHours(finalEnd.getHours() + duration);
             isValid = true;
           }
         }
       } else if (facility.pricingType === 'TIERED') {
+        // 🚨 FIX FOR TIERED PACKAGES (Dropdown selection: 1 Day, 2 Days)
         if (startDate && bookingOption) {
           const days = parseInt(bookingOption.split('_')[0]) || 1;
           finalStart = new Date(startDate);
+          finalStart.setHours(10, 0, 0, 0); // Force exactly 10:00 AM Check-in
+          
           finalEnd = new Date(startDate);
-          finalEnd.setDate(finalEnd.getDate() + days);
+          finalEnd.setDate(finalEnd.getDate() + days); // Add the duration days
+          finalEnd.setHours(8, 0, 0, 0); // Force exactly 08:00 AM Check-out
+          
           isValid = true;
         }
       } else if (facility.pricingType === 'HOURLY' || facility.pricingType === 'FIXED' || facility.facilityType === 'ROOM') {
+        // 🚨 FIX FOR FIXED PACKAGES (Start Date & End Date selection)
         if (startDate && endDate) {
           finalStart = new Date(startDate);
+          finalStart.setHours(10, 0, 0, 0); // Force exactly 10:00 AM Check-in
+          
           finalEnd = new Date(endDate);
+          finalEnd.setHours(8, 0, 0, 0); // Force exactly 08:00 AM Check-out
+          
           isValid = true;
         }
       }

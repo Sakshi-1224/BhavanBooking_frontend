@@ -69,7 +69,7 @@ export default function CheckInModal({ booking, onClose, onSuccess }) {
     return (
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md relative text-center">
-          <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X size={24} /></button>
+          <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"></button>
           <XCircle size={48} className="text-red-500 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Payment Pending</h2>
           <p className="text-gray-600 mb-6">
@@ -84,7 +84,7 @@ export default function CheckInModal({ booking, onClose, onSuccess }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md relative">
-        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X size={24} /></button>
+        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"></button>
         <h2 className="text-2xl font-bold text-gray-900 mb-6 border-b pb-3">Guest Check-In</h2>
         
         <form onSubmit={handleSubmit} className="space-y-6">

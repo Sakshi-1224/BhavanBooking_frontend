@@ -94,14 +94,23 @@ export default function BookingTable({ bookings, isProcessing, handleVerify, ope
                         <button onClick={() => handleVerify(booking.id)} disabled={isProcessing === booking.id} className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-xs transition">Verify</button>
                       )}
                       
-                      {/* 🚨 FIX: WALK-IN DESK PAYMENT COLLECTION 🚨 */}
-                      {/* Handles ALL cash collection scenarios: Full Payment, Advance Payment, or Awaiting Cash */}
+                      {/* 🚨 RECORD DESK PAYMENT 🚨 */}
                       {(['PENDING_PAYMENT', 'PENDING_ADVANCE_PAYMENT', 'AWAITING_CASH_PAYMENT'].includes(booking.status)) && (
                         <button 
                           onClick={() => openModal('recordAdvance', booking)} 
                           className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-2 rounded text-xs transition shadow-sm font-bold flex items-center justify-center gap-1 w-full"
                         >
                           <Banknote size={14} /> Record Desk Payment
+                        </button>
+                      )}
+
+                      {/* 🚨 FIX: COLLECT REMAINING RENT (Moved outside CONFIRMED block) 🚨 */}
+                      {booking.status === 'ON_HOLD' && financials.paymentStatus === 'PARTIAL' && (
+                        <button 
+                          onClick={() => openModal('recordRemaining', booking)} 
+                          className="bg-yellow-100 hover:bg-yellow-200 text-yellow-800 font-bold px-3 py-2 rounded text-xs transition border border-yellow-300 w-full text-center flex items-center justify-center gap-1"
+                        >
+                          <Banknote size={14} /> Collect Remaining Rent
                         </button>
                       )}
                       
@@ -114,20 +123,9 @@ export default function BookingTable({ bookings, isProcessing, handleVerify, ope
                       )}
                     </div>
 
-                    {/* --- CONFIRMED BOOKING ACTIONS (Payment & Check-in) --- */}
+                    {/* --- CONFIRMED BOOKING ACTIONS (Check-in Only) --- */}
                     {booking.status === 'CONFIRMED' && (
                       <div className="flex flex-col gap-2 border-t pt-2 mt-1 border-gray-100">
-                        
-                        {/* Collect Remaining Cash (If they previously held the booking) */}
-                        {financials.paymentStatus === 'PARTIAL' && (
-                          <button 
-                            onClick={() => openModal('recordRemaining', booking)} 
-                            className="bg-yellow-100 hover:bg-yellow-200 text-yellow-800 font-bold px-3 py-2 rounded text-xs transition border border-yellow-300 w-full text-center flex items-center justify-center gap-1"
-                          >
-                            <Banknote size={14} /> Collect Remaining Rent
-                          </button>
-                        )}
-
                         {/* Check-In */}
                         {isCheckInDay ? (
                           <button 
