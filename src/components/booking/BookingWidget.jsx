@@ -131,16 +131,31 @@ export default function BookingWidget({
                 )}
               </div>
             ) : (
-              <div className="bg-white p-4 rounded-xl border-2 border-blue-200">
-                <span className="block text-sm font-medium text-gray-600">Required Duration: <span className="font-bold text-gray-900">{facility.pricingDetails?.durationHours} Hours</span></span>
+             <div className="bg-white p-4 rounded-xl border-2 border-blue-200">
+                <span className="block text-sm font-medium text-gray-600">
+                  Required Duration: <span className="font-bold text-gray-900">{facility.pricingDetails?.durationHours} Hours</span>
+                </span>
                 
-                {/* 🚨 NEW: Time Picker for Flexible Slots 🚨 */}
+                {/* 🚨 UPDATED: Time Picker for Flexible Slots with 8 AM to 5 PM Restriction 🚨 */}
                 <div className="mt-4">
-                   <label className="block text-xs font-bold text-gray-700 mb-1">Select Start Time</label>
+                   <label className="block text-xs font-bold text-gray-700 mb-1">Select Start Time (Between 08:00 AM - 05:00 PM)</label>
                    <input 
                      type="time" 
+                     min="08:00"
+                     max="17:00"
                      value={startTimeInput} 
-                     onChange={(e) => setStartTimeInput(e.target.value)} 
+                     onChange={(e) => {
+                       const time = e.target.value;
+                       if (time) {
+                         const [hours, minutes] = time.split(':').map(Number);
+                         // Prevent selection before 8 AM (08:00) or strictly after 5 PM (17:00)
+                         if (hours < 8 || hours > 17 || (hours === 17 && minutes > 0)) {
+                           toast.warn("Start time must be between 08:00 AM and 05:00 PM.");
+                           return; // Reject the input
+                         }
+                       }
+                       setStartTimeInput(time);
+                     }} 
                      className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50"
                    />
                 </div>

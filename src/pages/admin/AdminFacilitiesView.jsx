@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
-import { Edit2, Plus, Trash2, Percent, Save, Clock, X } from 'lucide-react';
+import { Edit2, Plus, Trash2, Percent, Save, Clock, X, CheckCircle, XCircle } from 'lucide-react';
 
 export default function AdminFacilitiesView() {
   const [facilities, setFacilities] = useState([]);
@@ -17,23 +17,25 @@ export default function AdminFacilitiesView() {
   const [imagePreviews, setImagePreviews] = useState([]);
   const [editingId, setEditingId] = useState(null);
   
+  // 🚨 SYNCED WITH BACKEND MODEL: Added inventoryCount, maxCapacity, and isActive
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    facilityType: 'ROOM', // Based on DTO: ROOM, HALL, LAWN, CUSTOM
+    facilityType: 'ROOM', 
     capacity: 0,
+    inventoryCount: 1, 
     baseRate: 0,
     securityDeposit: 0,
-    pricingType: 'FIXED', // Based on logic: FIXED, HOURLY, TIERED, SLOT
+    pricingType: 'FIXED', 
+    isActive: true, 
   });
-
   
   // Slot Configuration & Included Facilities State
   const [pricingDetails, setPricingDetails] = useState({
     slotType: 'FIXED', 
     durationHours: 1,
     slots: [],
-    included_facilities: [] // 🚨 ADD THIS LINE
+    included_facilities: [] 
   });
 
   useEffect(() => {
@@ -82,10 +84,12 @@ export default function AdminFacilitiesView() {
         name: facility.name,
         description: facility.description,
         facilityType: facility.facilityType,
-        capacity: facility.capacity || facility.maxCapacity || 0,
+        capacity: facility.capacity ||  0, // Fallback for old data
+        inventoryCount: facility.inventoryCount ?? 1, // 🚨 Set inventory
         baseRate: facility.baseRate,
         securityDeposit: facility.securityDeposit || 0,
         pricingType: facility.pricingType || 'FIXED',
+        isActive: facility.isActive ?? true, // 🚨 Set Active status
       });
       
       // Load existing pricing details if SLOT type
@@ -97,14 +101,17 @@ export default function AdminFacilitiesView() {
           included_facilities: facility.pricingDetails.included_facilities || []
         });
       } else {
-        setPricingDetails({ slotType: 'FIXED', durationHours: 1, slots: [] });
+        setPricingDetails({ slotType: 'FIXED', durationHours: 1, slots: [], included_facilities: [] });
       }
 
       setImagePreviews(Array.isArray(facility.images) ? facility.images : []);
     } else {
       setEditingId(null);
-      setFormData({ name: '', description: '', facilityType: 'ROOM', capacity: 0, baseRate: 0, securityDeposit: 0, pricingType: 'FIXED' });
-      setPricingDetails({ slotType: 'FIXED', durationHours: 1, slots: [] });
+      setFormData({ 
+        name: '', description: '', facilityType: 'ROOM', capacity: 0, inventoryCount: 1, 
+        baseRate: 0, securityDeposit: 0, pricingType: 'FIXED', isActive: true 
+      });
+      setPricingDetails({ slotType: 'FIXED', durationHours: 1, slots: [], included_facilities: [] });
       setImagePreviews([]);
     }
     setModalOpen(true);
@@ -119,7 +126,6 @@ export default function AdminFacilitiesView() {
     }
   };
 
-  // --- SLOT BUILDER HANDLERS ---
   const addSlot = () => {
     setPricingDetails(prev => ({
       ...prev,
@@ -147,23 +153,18 @@ export default function AdminFacilitiesView() {
       const data = new FormData();
       Object.keys(formData).forEach(key => data.append(key, formData[key]));
       
-      // Append Images
      if (imageFiles.length > 0) {
-        // 1. User selected NEW files. Append them for backend Multer.
         imageFiles.forEach((file) => data.append('images', file)); 
       } else if (imagePreviews.length > 0) {
         data.append('existingImages', JSON.stringify(imagePreviews));
       }
-      // Inject Slot data if pricing type is SLOT
-    // --- DYNAMIC PRICING DETAILS PAYLOAD BUILDER ---
+
       const payloadPricingDetails = {};
 
-      // 1. If it's a Package/Complex, add the selected inclusions
       if (formData.facilityType === 'PACKAGE' || formData.facilityType === 'COMPLEX') {
         payloadPricingDetails.included_facilities = pricingDetails.included_facilities || [];
       }
 
-      // 2. If it's a Slot, add the time slot rules
       if (formData.pricingType === 'SLOT') {
         payloadPricingDetails.slotType = pricingDetails.slotType;
         if (pricingDetails.slotType === 'FLEXIBLE') {
@@ -175,11 +176,10 @@ export default function AdminFacilitiesView() {
         }
       }
 
-      // 3. Only append the object if it actually has data
       if (Object.keys(payloadPricingDetails).length > 0) {
         data.append('pricingDetails', JSON.stringify(payloadPricingDetails));
       }
-      // ------------------------------------------------
+      
       if (editingId) {
         await api.patch(`/facilities/${editingId}`, data);
         toast.success('Facility updated successfully!');
@@ -211,7 +211,6 @@ export default function AdminFacilitiesView() {
   return (
     <div className="space-y-6">
       
-      {/* TAX SETTINGS CARD (Unchanged) */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
           <Percent size={20} className="text-blue-600"/> Global Tax Settings (GST)
@@ -233,7 +232,6 @@ export default function AdminFacilitiesView() {
         </form>
       </div>
 
-      {/* INVENTORY TABLE */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <div className="flex justify-between items-center mb-6 border-b pb-4">
           <h2 className="text-xl font-bold text-gray-800">Manage Inventory & Pricing</h2>
@@ -248,8 +246,11 @@ export default function AdminFacilitiesView() {
               <tr className="bg-gray-50 border-b text-gray-600 text-sm">
                 <th className="p-3 font-semibold">Name</th>
                 <th className="p-3 font-semibold">Type</th>
-                <th className="p-3 font-semibold">Price Calculation</th>
+                {/* 🚨 ADDED INVENTORY TO TABLE */}
+                <th className="p-3 font-semibold">Inventory</th>
+                <th className="p-3 font-semibold">Price Calc</th>
                 <th className="p-3 font-semibold">Base Rate (₹)</th>
+                <th className="p-3 font-semibold">Status</th>
                 <th className="p-3 font-semibold">Actions</th>
               </tr>
             </thead>
@@ -258,8 +259,18 @@ export default function AdminFacilitiesView() {
                 <tr key={fac.id} className="border-b hover:bg-gray-50 transition">
                   <td className="p-3 font-bold text-gray-800">{fac.name}</td>
                   <td className="p-3 text-sm text-gray-600"><span className="bg-gray-200 px-2 py-1 rounded text-xs font-bold">{fac.facilityType}</span></td>
+                  
+                  {/* 🚨 ADDED INVENTORY DATA */}
+                  <td className="p-3 text-sm font-bold text-indigo-600">{fac.inventoryCount || 1} Total</td>
+                  
                   <td className="p-3 text-sm font-semibold text-blue-600">{fac.pricingType}</td>
                   <td className="p-3 font-bold text-green-700">₹{fac.baseRate}</td>
+                  
+                  {/* 🚨 ADDED STATUS TOGGLE INDICATOR */}
+                  <td className="p-3">
+                    {fac.isActive ? <CheckCircle size={18} className="text-green-500" /> : <XCircle size={18} className="text-red-500" />}
+                  </td>
+
                   <td className="p-3 flex gap-3">
                     <button onClick={() => handleOpenModal(fac)} className="text-blue-600 hover:text-blue-800 bg-blue-50 p-2 rounded transition"><Edit2 size={16}/></button>
                     <button onClick={() => handleDelete(fac.id)} className="text-red-600 hover:text-red-800 bg-red-50 p-2 rounded transition"><Trash2 size={16}/></button>
@@ -271,11 +282,18 @@ export default function AdminFacilitiesView() {
         </div>
       </div>
 
-      {/* ADD/EDIT MODAL */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl relative">
-            <h2 className="text-2xl font-bold mb-6 text-gray-800 border-b pb-3">{editingId ? 'Edit Facility' : 'Add New Facility'}</h2>
+            <div className="flex justify-between items-center mb-6 border-b pb-3">
+               <h2 className="text-2xl font-bold text-gray-800">{editingId ? 'Edit Facility' : 'Add New Facility'}</h2>
+               
+               {/* 🚨 ADDED ACTIVE TOGGLE */}
+               <label className="flex items-center gap-2 cursor-pointer bg-gray-100 px-3 py-1.5 rounded-full border">
+                 <input type="checkbox" checked={formData.isActive} onChange={e => setFormData({...formData, isActive: e.target.checked})} className="w-4 h-4 text-green-600 focus:ring-green-500 rounded cursor-pointer"/>
+                 <span className="text-sm font-bold text-gray-700">Active (Visible)</span>
+               </label>
+            </div>
             
             <form onSubmit={handleSubmit} className="space-y-5">
               
@@ -284,41 +302,32 @@ export default function AdminFacilitiesView() {
                 <input type="text" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border p-2.5 rounded-md focus:ring-blue-500" />
               </div>
 
-             <div className="grid grid-cols-2 gap-4">
-  
-  {/* Facility Type */}
-  <div>
-    <label className="block text-sm font-bold text-gray-700 mb-1">
-      Facility Type
-    </label>
-    <select
-      value={formData.facilityType}
-      onChange={e => setFormData({...formData, facilityType: e.target.value})}
-      className="w-full border p-2.5 rounded-md bg-white"
-    >
-      <option value="ROOM">Room</option>
-      <option value="HALL">Hall</option>
-      <option value="LAWN">Lawn</option>
-      <option value="PACKAGE">Package</option>
-      <option value="COMPLEX">Complex (Full Bhavan)</option>
-    </select>
-  </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Facility Type</label>
+                  <select value={formData.facilityType} onChange={e => setFormData({...formData, facilityType: e.target.value})} className="w-full border p-2.5 rounded-md bg-white">
+                    <option value="ROOM">Room</option>
+                    <option value="HALL">Hall</option>
+                    <option value="LAWN">Lawn</option>
+                    <option value="PACKAGE">Package</option>
+                    <option value="COMPLEX">Complex (Full Bhavan)</option>
+                    {/* 🚨 SYNCED ENUM: Added ITEM */}
+                    <option value="ITEM">Item (Extra Bed, etc.)</option>
+                  </select>
+                </div>
 
-  {/* Capacity */}
-  <div>
-    <label className="block text-sm font-bold text-gray-700 mb-1">
-      Capacity
-    </label>
-    <input
-      type="number"
-      required
-      value={formData.capacity}
-      onChange={e => setFormData({...formData,  capacity: e.target.value === "" ? "" : Number(e.target.value)})}
-      className="w-full border p-2.5 rounded-md focus:ring-blue-500"
-    />
-  </div>
+                {/* 🚨 RENAMED TO maxCapacity */}
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Max Capacity</label>
+                  <input type="number" required value={formData.capacity} onChange={e => setFormData({...formData,  capacity: e.target.value === "" ? "" : Number(e.target.value)})} className="w-full border p-2.5 rounded-md focus:ring-blue-500" />
+                </div>
 
-</div>
+                {/* 🚨 ADDED INVENTORY COUNT */}
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Inventory Count</label>
+                  <input type="number" min="1" required value={formData.inventoryCount} onChange={e => setFormData({...formData, inventoryCount: e.target.value === "" ? "" : Number(e.target.value)})} className="w-full border p-2.5 rounded-md focus:ring-indigo-500 bg-indigo-50 font-bold" />
+                </div>
+              </div>
 
               <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border">
                 <div>
@@ -338,12 +347,11 @@ export default function AdminFacilitiesView() {
                     <option value="HOURLY">Hourly</option>
                     <option value="TIERED">Tiered</option>
                     <option value="SLOT">Time Slots (Shifts)</option>
+                    {/* 🚨 SYNCED ENUM: Added PER_ITEM */}
+                    <option value="PER_ITEM">Per Item (Multiplied by Quantity)</option>
                  </select>
-               
               </div>
 
-
-              {/* DYNAMIC INCLUSIONS UI (Only for Packages/Complexes) */}
               {(formData.facilityType === 'PACKAGE' || formData.facilityType === 'COMPLEX') && (
                 <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
                   <label className="block text-sm font-bold text-orange-800 mb-2">Included Facilities in this Package</label>
@@ -351,7 +359,7 @@ export default function AdminFacilitiesView() {
                   
                   <div className="grid grid-cols-2 gap-3 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
                     {facilities
-                      .filter(f => f.id !== editingId && f.facilityType !== 'PACKAGE' && f.facilityType !== 'COMPLEX') // Don't show packages inside packages!
+                      .filter(f => f.id !== editingId && f.facilityType !== 'PACKAGE' && f.facilityType !== 'COMPLEX')
                       .map(fac => {
                         const isChecked = pricingDetails.included_facilities?.includes(fac.name);
                         return (
@@ -377,7 +385,6 @@ export default function AdminFacilitiesView() {
                 </div>
               )}
 
-              {/* DYNAMIC SLOT BUILDER UI */}
               {formData.pricingType === 'SLOT' && (
                 <div className="border-2 border-blue-200 bg-blue-50 rounded-lg p-4">
                   <div className="flex justify-between items-center mb-4">
@@ -414,7 +421,6 @@ export default function AdminFacilitiesView() {
                 </div>
               )}
 
-              {/* IMAGE UPLOAD SECTION */}
               <div className="border-2 border-dashed border-gray-300 bg-gray-50 rounded-lg p-5 text-center">
                 <label className="block text-sm font-bold text-gray-700 mb-3">Facility Images</label>
                 {imagePreviews?.length > 0 && (

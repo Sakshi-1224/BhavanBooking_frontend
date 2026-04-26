@@ -21,7 +21,8 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Unauthorized from './pages/Unauthorized';
 import UserDashboard from './pages/user/UserDashboard';
 import AdminDashboard from './pages/admin/AdminDashboard';
-
+import UserProfile from './pages/user/UserProfile';
+import ClerkProfile from './pages/clerk/ClerkProfile';
 function App() {
   const { login, logout, isAuthenticated, user } = useAuthStore();
 
@@ -113,6 +114,7 @@ function App() {
         </Route>
 
         <Route element={<ProtectedRoute allowedRoles={['USER', 'ADMIN', 'CLERK']} />}>
+         <Route path="/profile" element={<UserProfile />} />
           <Route path="/book/:facilityId" element={<BookingWizard />} />
         </Route>
 
@@ -123,6 +125,7 @@ function App() {
 
         <Route element={<ProtectedRoute allowedRoles={['CLERK']} />}>
           <Route path="/clerk/dashboard" element={<ClerkDashboard />} />
+          <Route path="/clerk/profile" element={<ClerkProfile />} /> {/* ADD THIS LINE */}
         </Route>
       </Routes>
     </Router>

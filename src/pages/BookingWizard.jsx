@@ -247,13 +247,18 @@ export default function BookingWizard() {
     setAvailability(null); setPartialAvailability(null);
   };
 
-  const handleQuantityChange = (id, delta) => {
+const handleQuantityChange = (id, delta, maxInventory = 1) => {
     setSelectedExtras(prev => {
-      const current = prev[id] || 1; const next = Math.max(1, current + delta); return { ...prev, [id]: next };
+      const current = prev[id] || 1; 
+      // Math.min ensures it never goes above maxInventory
+      // Math.max ensures it never goes below 1
+      const next = Math.min(Math.max(1, current + delta), maxInventory); 
+      return { ...prev, [id]: next };
     });
-    setAvailability(null); setPartialAvailability(null);
+    setAvailability(null); 
+    setPartialAvailability(null);
   };
-
+  
   const safeSetStartDate = (val) => { setStartDate(val); setSelectedSlot(null); setAvailability(null); setPartialAvailability(null); };
   const safeSetEndDate = (val) => { setEndDate(val); setAvailability(null); setPartialAvailability(null); };
   const safeSetBookingOption = (val) => { setBookingOption(val); setAvailability(null); setPartialAvailability(null); };

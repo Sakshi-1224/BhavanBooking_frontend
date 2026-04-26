@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Clock, CheckCircle, AlertCircle, CreditCard, Calendar, Loader2, FileText, Banknote } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Clock, CheckCircle, AlertCircle, CreditCard, Calendar, Loader2, FileText, Banknote, User as UserIcon } from 'lucide-react';
 import api from '../../api/axios';
 import { toast } from 'react-toastify';
 import useAuthStore from '../../store/useAuthStore';
@@ -177,9 +178,20 @@ export default function UserDashboard() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 bg-gray-50 min-h-screen">
-      <div className="mb-8">
-        <h1 className="text-3xl font-extrabold text-gray-900">My Bookings</h1>
-        <p className="text-gray-600 mt-2">Manage your facility reservations and payments.</p>
+     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+        <div>
+          <h1 className="text-3xl font-extrabold text-gray-900">My Bookings</h1>
+          <p className="text-gray-600 mt-2">Manage your facility reservations and payments.</p>
+        </div>
+        
+        {/* New Profile Link Button */}
+        <Link 
+          to="/profile" 
+          className="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-800 px-4 py-2.5 rounded-lg font-semibold shadow-sm transition-colors"
+        >
+          <UserIcon size={18} className="text-blue-600" />
+          My Profile
+        </Link>
       </div>
 
       {bookings.length === 0 ? (

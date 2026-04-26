@@ -1,23 +1,13 @@
 import React from 'react';
-import { User, Phone, Mail, MapPin, Clock, ShieldAlert } from 'lucide-react';
+import { User, Phone, Mail, MapPin } from 'lucide-react';
 
 export default function StaffBookingForm({ 
   customerData, 
-  setCustomerData, 
-  holdData, 
-  setHoldData 
+  setCustomerData 
 }) {
   
   const handleChange = (e) => {
     setCustomerData({ ...customerData, [e.target.name]: e.target.value });
-  };
-
-  const handleHoldChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setHoldData({
-      ...holdData,
-      [name]: type === 'checkbox' ? checked : Number(value)
-    });
   };
 
   return (
@@ -80,56 +70,6 @@ export default function StaffBookingForm({
           </div>
         </div>
       </div>
-
-      {/* 🚨 NEW: Hold Booking Configuration Section 🚨 */}
-      <div className="bg-orange-50 border-2 border-orange-200 rounded-xl p-5">
-        <label className="flex items-center gap-3 cursor-pointer">
-          <input 
-            type="checkbox" 
-            name="isHoldingAllowed"
-            checked={holdData?.isHoldingAllowed || false}
-            onChange={handleHoldChange}
-            className="w-5 h-5 text-orange-600 rounded border-orange-300 focus:ring-orange-500"
-          />
-          <span className="font-bold text-orange-900 text-lg flex items-center gap-2">
-            <ShieldAlert size={20} /> Allow Hold Booking (Partial Advance)
-          </span>
-        </label>
-
-        {holdData?.isHoldingAllowed && (
-          <div className="mt-5 pl-8 grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fade-in">
-            <div>
-               <label className="block text-xs font-bold text-orange-800 mb-1">Advance Required (%)</label>
-               <input 
-                 type="number" 
-                 name="holdingPercentage"
-                 min="10" max="100"
-                 value={holdData.holdingPercentage}
-                 onChange={handleHoldChange}
-                 className="w-full border-orange-300 p-2.5 rounded-lg focus:ring-2 focus:ring-orange-500 bg-white"
-               />
-            </div>
-            <div>
-               <label className="block text-xs font-bold text-orange-800 mb-1 flex items-center gap-1">
-                 <Clock size={14}/> Validity (Days to pay rest)
-               </label>
-               <input 
-                 type="number" 
-                 name="holdingValidityDays"
-                 min="1" max="30"
-                 value={holdData.holdingValidityDays}
-                 onChange={handleHoldChange}
-                 className="w-full border-orange-300 p-2.5 rounded-lg focus:ring-2 focus:ring-orange-500 bg-white"
-               />
-            </div>
-            
-            <div className="sm:col-span-2 bg-white/60 p-3 rounded-lg border border-orange-200 text-sm text-orange-800 mt-2">
-              <strong>Note:</strong> The guest must pay {holdData.holdingPercentage}% now to secure the booking. They will have {holdData.holdingValidityDays} days to pay the remaining balance, otherwise the booking will be automatically cancelled.
-            </div>
-          </div>
-        )}
-      </div>
-
     </div>
   );
 }

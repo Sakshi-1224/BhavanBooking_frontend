@@ -1,5 +1,7 @@
+// src/store/useAuthStore.js
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { authService } from '../api/auth.service'; 
 
 const useAuthStore = create(
   persist(
@@ -7,24 +9,42 @@ const useAuthStore = create(
       user: null,
       role: null,
       isAuthenticated: false,
+      isCheckingAuth: false,
 
-      // Unified login function - strictly for user metadata
       login: (userData) => set({
         user: userData,
         role: userData.role,
         isAuthenticated: true,
       }),
 
-      // Unified logout function - clears metadata
       logout: () => set({
         user: null,
         role: null,
         isAuthenticated: false,
       }),
+
+      checkAuth: async () => {
+        set({ isCheckingAuth: true });
+        try {
+          const response = await authService.getMyProfile();
+          const userData = response.data.data.user; 
+          set({
+            user: userData,
+            role: userData.role,
+            isAuthenticated: true,
+            isCheckingAuth: false,
+          });
+        } catch (error) {
+          set({
+            user: null,
+            role: null,
+            isAuthenticated: false,
+            isCheckingAuth: false,
+          });
+        }
+      }
     }),
     { 
-      // This saves the user details to localStorage so they persist on refresh,
-      // but it does NOT save the highly sensitive JWT.
       name: 'bhavan-auth-storage' 
     }
   )

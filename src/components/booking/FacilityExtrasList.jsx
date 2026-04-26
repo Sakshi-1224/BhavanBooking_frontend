@@ -131,11 +131,37 @@ export default function FacilityExtrasList({
                 </div>
               </div>
               
-              {isSelected && item.pricingType === 'PER_ITEM' && (
-                <div className="flex items-center gap-2 border rounded-md px-2 py-1 bg-white shadow-sm mt-3 self-start ml-8">
-                  <button type="button" onClick={() => handleQuantityChange(item.id, -1)} disabled={selectedExtras[item.id] <= 1} className="text-gray-500 hover:text-gray-800 disabled:opacity-30"><Minus size={14}/></button>
-                  <span className="font-bold w-6 text-center text-sm">{selectedExtras[item.id]}</span>
-                  <button type="button" onClick={() => handleQuantityChange(item.id, 1)} className="text-gray-500 hover:text-gray-800"><Plus size={14}/></button>
+              {isSelected && (item.pricingType === 'PER_ITEM' || item.facilityType === 'ROOM' || item.inventoryCount > 1) && (
+                <div className="flex flex-col gap-1 self-start ml-8 mt-3">
+                  <div className="flex items-center gap-2 border rounded-md px-2 py-1 bg-white shadow-sm">
+                    {/* Minus Button */}
+                    <button 
+                      type="button" 
+                      onClick={() => handleQuantityChange(item.id, -1, item.inventoryCount || 1)} 
+                      disabled={selectedExtras[item.id] <= 1} 
+                      className="text-gray-500 hover:text-gray-800 disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <Minus size={14}/>
+                    </button>
+                    
+                    {/* Number */}
+                    <span className="font-bold w-6 text-center text-sm">{selectedExtras[item.id]}</span>
+                    
+                    {/* Plus Button - Now capped by Inventory */}
+                    <button 
+                      type="button" 
+                      onClick={() => handleQuantityChange(item.id, 1, item.inventoryCount || 1)} 
+                      disabled={selectedExtras[item.id] >= (item.inventoryCount || 1)}
+                      className="text-gray-500 hover:text-gray-800 disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <Plus size={14}/>
+                    </button>
+                  </div>
+                  
+                  {/* Optional: Show the user the max limit */}
+                  <span className="text-[10px] text-gray-500 font-medium">
+                    Max: {item.inventoryCount || 1} available
+                  </span>
                 </div>
               )}
             </div>
