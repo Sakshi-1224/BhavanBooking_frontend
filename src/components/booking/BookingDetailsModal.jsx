@@ -34,6 +34,20 @@ export default function BookingDetailsModal({ booking, onClose }) {
   const deposit = Number(booking.financials?.securityDeposit || 0);
   const advance = Number(booking.financials?.advanceAmountRequested || 0);
 
+  // --- PERFECTED PAYMENT CALCULATION ---
+  // Calculates exactly how much cash/online money the user has paid towards rent
+  let actualPaidAmount = Number(booking.financials?.holdAmountPaid || 0) + Number(booking.financials?.remainingAmountPaid || 0);
+
+  // Fallback just in case those specific database fields weren't populated in older bookings
+  if (actualPaidAmount === 0 && ['COMPLETED', 'PARTIAL', 'REFUNDED'].includes(booking.financials?.paymentStatus)) {
+    if (booking.financials?.paymentStatus === 'PARTIAL' || booking.status === 'ON_HOLD') {
+      actualPaidAmount = advance;
+    } else {
+      actualPaidAmount = base; 
+    }
+  }
+  // -------------------------------------
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
       <div className="bg-gray-50 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col relative">
@@ -139,7 +153,6 @@ export default function BookingDetailsModal({ booking, onClose }) {
                   <span className="text-blue-700">₹{base.toLocaleString('en-IN')}</span>
                 </div>
 
-                {/* 🚨 DISCLAIMER NOTE 🚨 */}
                 <div className="mt-3 bg-orange-100/50 p-3 rounded border border-orange-200">
                   <p className="text-xs text-orange-800 font-medium leading-tight">
                     * Note: The refundable security deposit of <strong className="font-bold">₹{deposit.toLocaleString('en-IN')}</strong> is not included in the online payment. It will be collected separately at the time of check-in at the desk.
@@ -147,21 +160,20 @@ export default function BookingDetailsModal({ booking, onClose }) {
                 </div>
 
                 {/* ADVANCE & PAYMENT INFO */}
-                {advance > 0 && (
+                {(advance > 0 || actualPaidAmount > 0) && (
                   <div className="mt-4 pt-4 border-t border-gray-200 space-y-2">
-                    <div className="flex justify-between text-gray-600">
-                      <span>Advance Required:</span>
-                      <span>₹{advance.toLocaleString('en-IN')}</span>
-                    </div>
+                    {advance > 0 && (
+                      <div className="flex justify-between text-gray-600">
+                        <span>Advance Required:</span>
+                        <span>₹{advance.toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
                     
-                    {/* Show Amount Paid if they have actually paid it */}
-                    {booking.financials?.paymentStatus !== 'PENDING' && (
+                    {/* ACCURATE AMOUNT PAID UPFRONT */}
+                    {actualPaidAmount > 0 && (
                       <div className="flex justify-between items-center text-green-700 font-bold bg-green-100/50 p-2.5 rounded-lg border border-green-200">
-                        <span>Amount Paid Upfront:</span>
-                        <span>₹{booking.financials?.paymentStatus === 'COMPLETED' ? 
-                          base.toLocaleString('en-IN') : 
-                          advance.toLocaleString('en-IN')}
-                        </span>
+                        <span>Total Amount Paid Upfront:</span>
+                        <span>₹{actualPaidAmount.toLocaleString('en-IN')}</span>
                       </div>
                     )}
                   </div>
@@ -174,9 +186,10 @@ export default function BookingDetailsModal({ booking, onClose }) {
                       <AlertCircle size={14} /> Cancellation Settlement
                     </h5>
                     
+                    {/* PERFECTED CANCELLATION FEE MATH */}
                     <div className="flex justify-between text-red-700 text-sm font-medium">
                       <span>Cancellation Fee (Retained by Bhavan):</span>
-                      <span>₹{(advance - Number(booking.financials?.refundAmount || 0)).toLocaleString('en-IN')}</span>
+                      <span>₹{Math.max(0, actualPaidAmount - Number(booking.financials?.refundAmount || 0)).toLocaleString('en-IN')}</span>
                     </div>
                     
                     <div className="flex justify-between text-green-700 font-bold text-base bg-white p-3 rounded-lg border border-green-200 mt-2 shadow-sm">

@@ -8,19 +8,38 @@ export default function CheckoutModal({ booking, onClose, onSuccess }) {
   const [isFetchingInvoice, setIsFetchingInvoice] = useState(true);
   const [invoiceData, setInvoiceData] = useState(null);
 
+  // Default fallback tax rate (10%) just in case the API completely fails
+  const [taxRate, setTaxRate] = useState(0.10);
+
   const [formData, setFormData] = useState({
     penalties: [], additionalItems: [], additionalItemName: '', additionalItemAmount: '', penaltyReason: '', penaltyAmount: '',
     electricityUnitsConsumed: '', cleaningCharges: '', generatorCharges: '', discountAmount: '',
     invoiceType: 'GENERAL', customerName: '', customerEmail: '', customerPhone: '', billingAddress: '',
-    settlementMode: 'ONLINE', // NEW STATE FOR SETTLEMENT MODE
+    settlementMode: 'ONLINE',
   });
 
   useEffect(() => {
-    const fetchDraft = async () => {
+    const fetchDraftAndSettings = async () => {
       try {
         const response = await api.get(`/billing/${booking.id}/invoice`);
         const invoice = response.data.data.invoice;
         setInvoiceData(invoice);
+
+        const draftBase = Number(invoice.baseAmount) || 0;
+        const draftAdditional = Number(invoice.totalAdditionalAmount) || 0;
+        const draftDiscount = Number(invoice.discountAmount) || 0;
+        
+        // Match backend draft logic
+        const draftTaxable = Math.max(0, draftBase + draftAdditional - draftDiscount);
+        
+        const draftCgst = Number(invoice.cgstAmount) || 0;
+        const draftSgst = Number(invoice.sgstAmount) || 0;
+
+        if (draftTaxable > 0 && invoice.invoiceType !== 'DONATION') {
+           const calculatedRate = (draftCgst + draftSgst) / draftTaxable;
+           setTaxRate(calculatedRate);
+        }
+
         setFormData(prev => ({ ...prev, 
           electricityUnitsConsumed: invoice.electricityUnitsConsumed || '', cleaningCharges: invoice.cleaningCharges || '',
           generatorCharges: invoice.generatorCharges || '', discountAmount: invoice.discountAmount || '',
@@ -28,33 +47,80 @@ export default function CheckoutModal({ booking, onClose, onSuccess }) {
           invoiceType: invoice.invoiceType || 'GENERAL', customerName: invoice.customerName || booking?.user?.fullName || '',
           customerEmail: invoice.customerEmail || booking?.user?.email || '', customerPhone: invoice.customerPhone || booking?.user?.phone || '',
           billingAddress: invoice.billingAddress || '',
-         settlementMode: invoice.settlementMode || (booking?.bookingSource === 'WALK_IN' ? 'CASH' : 'ONLINE'),
+          settlementMode: invoice.settlementMode || (booking?.bookingSource === 'WALK_IN' ? 'CASH' : 'ONLINE'),
         }));
       } catch (error) {
+        try {
+          const settingsRes = await api.get('/settings/taxes');
+          const { cgstPercentage, sgstPercentage } = settingsRes.data.data || settingsRes.data;
+          
+          if (cgstPercentage !== undefined && sgstPercentage !== undefined) {
+             const dynamicRate = (Number(cgstPercentage) + Number(sgstPercentage)) / 100;
+             setTaxRate(dynamicRate);
+          }
+        } catch (settingsError) {
+          console.error("Failed to fetch live tax settings:", settingsError);
+        }
+
         setFormData(prev => ({ ...prev, invoiceType: 'GENERAL', customerName: booking?.user?.fullName || '', customerEmail: booking?.user?.email || '', customerPhone: booking?.user?.phone || '', settlementMode: booking?.bookingSource === 'WALK_IN' ? 'CASH' : 'ONLINE' }));
-      } finally { setIsFetchingInvoice(false); }
+      } finally { 
+        setIsFetchingInvoice(false); 
+      }
     };
-    fetchDraft();
+    fetchDraftAndSettings();
   }, [booking]);
 
   const removeArrayItem = (key, index) => setFormData(prev => ({ ...prev, [key]: (prev[key] || []).filter((_, i) => i !== index) }));
 
-  // Live preview math
+  // --- PERFECTED LIVE PREVIEW MATH (MIRRORS BACKEND EXACTLY) ---
   const base = Number(booking.financials?.calculatedAmount || 0);
   const deposit = Number(booking.financials?.securityDeposit || 0);
+  
+  // Extras
   const typedExtra = Number(formData.additionalItemAmount || 0);
   const totalExtras = (formData.additionalItems || []).reduce((sum, i) => sum + Number(i.amount), 0) + typedExtra;
+  
+  // Utilities & Penalties
+  const electricityCharges = Number(formData.electricityUnitsConsumed || 0) * 14;
+  const cleaningCharges = Number(formData.cleaningCharges || 0);
+  const generatorCharges = Number(formData.generatorCharges || 0);
+  const typedPenalty = Number(formData.penaltyAmount || 0);
+  const totalPenalties = (formData.penalties || []).reduce((sum, p) => sum + Number(p.amount), 0) + typedPenalty;
+  
+  const totalUtilitiesAndPenalties = electricityCharges + cleaningCharges + generatorCharges + totalPenalties;
+
+  // Discount
   const discount = Number(formData.discountAmount || 0);
-  const taxable = Math.max(0, base + totalExtras - discount);
-  const taxes = formData.invoiceType === 'DONATION' ? 0 : taxable * 0.05; 
-  const totalInvoiceAmount = taxable + taxes;
-  const totalDeductions = (Number(formData.electricityUnitsConsumed || 0) * 14) + Number(formData.cleaningCharges || 0) + Number(formData.generatorCharges || 0) + ((formData.penalties || []).reduce((sum, p) => sum + Number(p.amount), 0) + Number(formData.penaltyAmount || 0));
-  const grandTotalCost = totalInvoiceAmount + totalDeductions;
+  
+  // Taxable: Base + Extras + Utilities/Penalties - Discount
+  const taxable = Math.max(0, base + totalExtras + totalUtilitiesAndPenalties - discount);
+  
+  // Tax Calculation
+  const taxes = formData.invoiceType === 'DONATION' ? 0 : taxable * taxRate; 
+  
+  // Grand Total is now simply Taxable + Taxes
+  const grandTotalCost = taxable + taxes;
+  
   const totalPaid = base + deposit;
   const netDifference = totalPaid - grandTotalCost;
   const refundDue = netDifference > 0 ? netDifference : 0;
   const balanceDue = netDifference < 0 ? Math.abs(netDifference) : 0;
 
+  // Strict Online Refund Restriction Logic
+  const hasOnlinePayment = 
+    booking?.bookingSource === 'ONLINE' ||
+    booking?.paymentMode === 'ONLINE' ||
+    booking?.payments?.some(p => p.paymentMode === 'ONLINE' || p.method === 'ONLINE') ||
+    booking?.transactions?.some(t => t.paymentMode === 'ONLINE' || t.method === 'ONLINE');
+
+  const showOnlineOption = balanceDue > 0 || (refundDue > 0 && hasOnlinePayment);
+
+  useEffect(() => {
+    if (!showOnlineOption && formData.settlementMode === 'ONLINE') {
+      setFormData(prev => ({ ...prev, settlementMode: 'CASH' }));
+    }
+  }, [showOnlineOption, formData.settlementMode]);
+  
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsProcessing(true);
@@ -64,7 +130,6 @@ export default function CheckoutModal({ booking, onClose, onSuccess }) {
       let finalExtras = [...formData.additionalItems];
       if (formData.additionalItemName && formData.additionalItemAmount) finalExtras.push({ name: formData.additionalItemName, amount: Number(formData.additionalItemAmount) });
 
-      // Calculate due date (Required for ONLINE settlement)
       const dueDate = new Date(); 
       dueDate.setDate(dueDate.getDate() + 7); 
 
@@ -77,10 +142,9 @@ export default function CheckoutModal({ booking, onClose, onSuccess }) {
         additionalItems: finalExtras, 
         discountAmount: Number(formData.discountAmount || 0), 
         invoiceType: formData.invoiceType,
-        settlementMode: formData.settlementMode, // NEW FIELD
+        settlementMode: formData.settlementMode, 
       };
 
-      // Only attach dueDate if it's ONLINE, per backend rules
       if (formData.settlementMode === 'ONLINE') {
         payload.dueDate = dueDate.toISOString();
       }
@@ -167,11 +231,18 @@ export default function CheckoutModal({ booking, onClose, onSuccess }) {
                 <div className="space-y-3 text-sm text-gray-300">
                   <div className="flex justify-between"><span>Base Booking:</span><span>₹{base.toLocaleString('en-IN')}</span></div>
                   {totalExtras > 0 && <div className="flex justify-between text-blue-200"><span>Extra Items:</span><span>+ ₹{totalExtras.toLocaleString('en-IN')}</span></div>}
+                  {totalUtilitiesAndPenalties > 0 && <div className="flex justify-between text-orange-300"><span>Utilities & Penalties:</span><span>+ ₹{totalUtilitiesAndPenalties.toLocaleString('en-IN')}</span></div>}
                   {discount > 0 && <div className="flex justify-between text-green-400"><span>Discount:</span><span>- ₹{discount.toLocaleString('en-IN')}</span></div>}
-                  <div className="flex justify-between text-white border-t border-gray-700 pt-2"><span>Taxable:</span><span>₹{taxable.toLocaleString('en-IN')}</span></div>
-                  <div className="flex justify-between"><span>Taxes:</span><span>{formData.invoiceType === 'DONATION' ? '₹0 (Donation)' : `+ ₹${taxes.toLocaleString('en-IN')}`}</span></div>
+                  
+                  <div className="flex justify-between text-white border-t border-gray-700 pt-2"><span>Taxable Amount:</span><span>₹{taxable.toLocaleString('en-IN')}</span></div>
+                  
+                  <div className="flex justify-between">
+                    <span>Taxes ({(taxRate * 100).toFixed(1)}%):</span>
+                    <span>{formData.invoiceType === 'DONATION' ? '₹0 (Donation)' : `+ ₹${taxes.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`}</span>
+                  </div>
+                  
                   <div className="border-t border-gray-700 my-4"></div>
-                  <div className="flex justify-between font-bold text-lg text-white"><span>Grand Total:</span><span>₹{grandTotalCost.toLocaleString('en-IN')}</span></div>
+                  <div className="flex justify-between font-bold text-lg text-white"><span>Grand Total:</span><span>₹{grandTotalCost.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></div>
                   <div className="flex justify-between text-green-400"><span>Paid Upfront:</span><span>₹{totalPaid.toLocaleString('en-IN')}</span></div>
                 </div>
               </div>
@@ -181,12 +252,12 @@ export default function CheckoutModal({ booking, onClose, onSuccess }) {
                    {refundDue > 0 ? (
                       <div className="bg-green-900/40 text-green-400 p-4 rounded-xl border border-green-700/50">
                         <span className="block text-xs uppercase mb-1 font-bold">To be refunded to user</span>
-                        <span className="text-3xl font-extrabold">₹{refundDue.toLocaleString('en-IN')}</span>
+                        <span className="text-3xl font-extrabold">₹{refundDue.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
                       </div>
                    ) : balanceDue > 0 ? (
                       <div className="bg-red-900/40 text-red-400 p-4 rounded-xl border border-red-700/50">
                         <span className="block text-xs uppercase mb-1 font-bold">Balance Due (User Pays)</span>
-                        <span className="text-3xl font-extrabold">₹{balanceDue.toLocaleString('en-IN')}</span>
+                        <span className="text-3xl font-extrabold">₹{balanceDue.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
                       </div>
                    ) : (
                       <div className="bg-gray-800 text-gray-300 p-4 rounded-xl border border-gray-600">
@@ -195,7 +266,6 @@ export default function CheckoutModal({ booking, onClose, onSuccess }) {
                    )}
                 </div>
 
-                {/* --- NEW: SETTLEMENT MODE SELECTION --- */}
                 {(refundDue > 0 || balanceDue > 0) && (
                   <div className="bg-gray-800 p-4 rounded-lg border border-gray-700 mt-4">
                     <h3 className="text-sm font-bold text-gray-200 mb-3 flex items-center gap-2">
@@ -205,17 +275,12 @@ export default function CheckoutModal({ booking, onClose, onSuccess }) {
                       Select how this {refundDue > 0 ? 'refund' : 'payment'} will be processed.
                     </p>
                     <div className="flex gap-4">
-
-
-                     {/* ONLY SHOW ONLINE IF IT WAS NOT A WALK-IN */}
-                      {booking?.bookingSource !== 'WALK_IN' && (
+                      {showOnlineOption && (
                         <label className="flex items-center gap-2 cursor-pointer text-sm">
                           <input type="radio" value="ONLINE" checked={formData.settlementMode === 'ONLINE'} onChange={(e) => setFormData({...formData, settlementMode: e.target.value})} className="accent-blue-500"/>
                           <span className={formData.settlementMode === 'ONLINE' ? 'text-white' : 'text-gray-400'}>Online (Auto)</span>
                         </label>
                       )}
-
-
                       <label className="flex items-center gap-2 cursor-pointer text-sm">
                         <input type="radio" value="CASH" checked={formData.settlementMode === 'CASH'} onChange={(e) => setFormData({...formData, settlementMode: e.target.value})} className="accent-blue-500"/>
                         <span className={formData.settlementMode === 'CASH' ? 'text-white' : 'text-gray-400'}>Cash (Manual)</span>

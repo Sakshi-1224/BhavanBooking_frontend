@@ -79,7 +79,7 @@ export default function AdminDashboard() {
     
     try {
       await api.patch(`/bookings/${booking.id}/process-refund`);
-      toast.success('Cancellation approved and refund processed successfully!');
+      toast.success('Cancellation approved!');
       fetchBookings();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to process refund');
@@ -95,8 +95,6 @@ export default function AdminDashboard() {
     setTotalAmount(baseCalculated.toString());
     setOverrideSecurityDeposit(security.toString());
     
-    // 🚨 FIX: Pre-fill the modal with the Clerk's requested hold settings!
-    // This prevents the Admin from accidentally overwriting the walk-in's preference.
     setIsHoldingAllowed(financials.isHoldingAllowed || false);
     setHoldingPercentage(financials.holdingPercentage || 20);
     setHoldingValidityDays(financials.holdingValidityDays || 7);
@@ -286,21 +284,74 @@ export default function AdminDashboard() {
                                 </button>
                               )}
 
-                              {(booking.status === 'PENDING_CANCELLATION' || (booking.status === 'CANCELLED' && booking.financials?.refundAmount > 0 && booking.financials?.paymentStatus !== 'REFUNDED')) && (
-                                <div className="flex flex-col gap-2 min-w-[140px]">
+                              {/* 1. CANCELLATION PENDING APPROVAL */}
+                              {booking.status === 'PENDING_CANCELLATION' && (
+                                <div className="flex flex-col gap-2 min-w-[150px] max-w-[220px]">
                                   <div className="bg-purple-50 text-purple-800 text-xs p-2 rounded border border-purple-200 shadow-inner">
-                                    <span className="block font-bold">Refund: ₹{booking.financials?.refundAmount || 0}</span>
-                                    <span className="block text-[10px] uppercase tracking-wider mt-0.5 font-semibold text-purple-600">
-                                      Mode: {booking.financials?.razorpayPaymentIds?.length > 0 ? 'Online Auto-Refund' : 'Manual Cash'}
+                                    <span className="block font-bold mb-1">Refund: ₹{booking.financials?.refundAmount || 0}</span>
+                                    <span className="block text-[10px] uppercase tracking-wider font-semibold text-purple-600 border-b border-purple-200 pb-1 mb-1">
+                                      Mode: {booking.financials?.razorpayPaymentIds?.length > 0 ? 'Online Auto' : 'Manual Cash'}
                                     </span>
+                                    <span className="block text-[10px] font-bold text-gray-700">User's Reason:</span>
+                                    <span className="block text-[10px] italic text-gray-600 break-words whitespace-normal">{booking.cancellationReason}</span>
                                   </div>
                                   <button 
                                     onClick={() => handleProcessRefund(booking)} 
                                     className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded text-xs font-semibold transition flex items-center justify-center gap-1 shadow-sm w-full"
                                   >
                                     <CreditCard size={14}/> 
-                                    Approve & Process
+                                    Approve Cancellation
                                   </button>
+                                </div>
+                              )}
+
+                              {/* 1.5 MANUAL CASH REFUND PENDING HANDOVER (NEW BUTTON) */}
+                              {booking.status === 'CANCELLED' && booking.financials?.refundAmount > 0 && booking.financials?.paymentStatus === 'PARTIAL' && (
+                                <div className="flex flex-col gap-2 min-w-[150px] max-w-[220px]">
+                                  <div className="bg-orange-50 text-orange-800 text-xs p-2 rounded border border-orange-200 shadow-inner">
+                                    <span className="block font-bold mb-1 text-orange-700">Cash Due: ₹{booking.financials?.refundAmount || 0}</span>
+                                    <span className="block text-[10px] font-bold text-gray-700">User's Reason:</span>
+                                    <span className="block text-[10px] italic text-gray-600 break-words whitespace-normal">{booking.cancellation.cancellationReason}</span>
+                                  </div>
+                                  <button 
+                                    onClick={async () => {
+                                      if(window.confirm('Confirm you have handed over the cash to the user?')) {
+                                          try {
+                                              await api.patch(`/bookings/${booking.id}/complete-manual-refund`, { refundNote: 'Cash handed at desk' });
+                                              toast.success('Manual refund marked as completed.');
+                                              fetchBookings();
+                                          } catch(err) { toast.error(err.response?.data?.message || 'Failed to complete refund'); }
+                                      }
+                                    }}
+                                    className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-2 rounded text-xs font-semibold transition flex items-center justify-center gap-1 shadow-sm w-full"
+                                  >
+                                    <CheckCircle size={14}/> 
+                                    Confirm Cash Given
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* 2. CANCELLATION REFUND COMPLETED */}
+                              {booking.status === 'CANCELLED' && booking.financials?.refundAmount > 0 && booking.financials?.paymentStatus === 'REFUNDED' && (
+                                <div className="flex flex-col gap-1 min-w-[150px] max-w-[220px]">
+                                  <span className="px-2 py-1.5 text-[11px] font-bold rounded bg-green-100 text-green-800 border border-green-200 text-center flex items-center justify-center gap-1 shadow-sm">
+                                    <CheckCircle size={14}/> Refund Completed
+                                  </span>
+                                  <div className="bg-gray-50 text-gray-700 text-[10px] p-2 rounded border border-gray-200 shadow-inner break-words whitespace-normal">
+                                    <span className="font-bold">Reason:</span> <span className="italic">{booking.cancellationReason}</span>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* 3. CANCELLATION WITH NO REFUND APPLICABLE */}
+                              {booking.status === 'CANCELLED' && (!booking.financials?.refundAmount || booking.financials?.refundAmount <= 0) && (
+                                <div className="flex flex-col gap-1 min-w-[150px] max-w-[220px]">
+                                  <span className="px-2 py-1.5 text-[11px] font-bold rounded bg-gray-100 text-gray-600 border border-gray-300 text-center shadow-sm">
+                                    No Refund Due
+                                  </span>
+                                  <div className="bg-gray-50 text-gray-700 text-[10px] p-2 rounded border border-gray-200 shadow-inner break-words whitespace-normal">
+                                    <span className="font-bold">Reason:</span> <span className="italic">{booking.cancellationReason}</span>
+                                  </div>
                                 </div>
                               )}
 
@@ -312,13 +363,12 @@ export default function AdminDashboard() {
                                       setPrintModal({ invoice: response.data.data.invoice, booking });
                                     } catch(err) { toast.error("Invoice not found."); }
                                   }} 
-                                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded text-xs transition flex items-center gap-1">
+                                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded text-xs transition flex items-center gap-1 h-fit">
                                   <FileText size={14}/> View Bill
                                 </button>
                               )}
                               
-                              {/* 🚨 FIXED: Pass the local booking object directly instead of fetching */}
-                              <button onClick={() => setViewingDetails(booking)} className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1.5 rounded text-xs transition flex items-center gap-1"><Eye size={14}/> Details</button>
+                              <button onClick={() => setViewingDetails(booking)} className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1.5 rounded text-xs transition flex items-center gap-1 h-fit"><Eye size={14}/> Details</button>
                             </td>
                           </tr>
                        )
@@ -490,23 +540,23 @@ export default function AdminDashboard() {
                   const base = Number(inv.baseAmount) || 0;
                   const extras = Number(inv.totalAdditionalAmount) || 0;
                   const discount = Number(inv.discountAmount) || 0;
-                  const taxable = base + extras - discount;
-
-                  const cgst = Number(inv.cgstAmount || 0);
-                  const sgst = Number(inv.sgstAmount || 0);
-                  const taxes = cgst + sgst;
-
-                  const cgstRate = taxable > 0 ? Number(((cgst / taxable) * 100).toFixed(2)) : 0;
-                  const sgstRate = taxable > 0 ? Number(((sgst / taxable) * 100).toFixed(2)) : 0;
-                  const totalGstRate = cgstRate + sgstRate;
-
-                  const totalInvoiceAmount = Number(inv.totalAmount) || 0;
 
                   const utilities = Number(inv.electricityCharges || 0) + Number(inv.cleaningCharges || 0) + Number(inv.generatorCharges || 0);
                   const penalties = inv.damagesAndPenalties?.reduce((sum, p) => sum + Number(p.amount), 0) || 0;
                   const totalDeductions = Number(inv.totalDeductions) || 0;
 
-                  const grandTotalCost = totalInvoiceAmount + totalDeductions;
+                  const taxable = Math.max(0, base + extras + totalDeductions - discount);
+
+                  const cgst = Number(inv.cgstAmount || 0);
+                  const sgst = Number(inv.sgstAmount || 0);
+                  const taxes = cgst + sgst;
+
+                  const cgstRate = taxable > 0 ? Number(((cgst / taxable) * 100).toFixed(1)) : 0;
+                  const sgstRate = taxable > 0 ? Number(((sgst / taxable) * 100).toFixed(1)) : 0;
+                  const totalGstRate = cgstRate + sgstRate;
+
+                  const grandTotalCost = Number(inv.totalAmount) || 0;
+
                   const paid = base + Number(inv.securityDepositHeld || 0);
                   
                   const refundDue = Number(inv.finalRefundAmount) || 0;
@@ -519,15 +569,11 @@ export default function AdminDashboard() {
                         <div className="space-y-3 text-sm text-gray-300">
                           <div className="flex justify-between"><span>Base Booking:</span><span>₹{base.toLocaleString('en-IN')}</span></div>
                           {extras > 0 && <div className="flex justify-between text-blue-200"><span>Extra Items Added:</span><span>+ ₹{extras.toLocaleString('en-IN')}</span></div>}
+                          {totalDeductions > 0 && <div className="flex justify-between text-orange-300"><span>Utilities & Penalties:</span><span>+ ₹{totalDeductions.toLocaleString('en-IN')}</span></div>}
                           {discount > 0 && <div className="flex justify-between text-green-400 font-bold"><span>Discount Applied:</span><span>- ₹{discount.toLocaleString('en-IN')}</span></div>}
                           
                           <div className="flex justify-between font-semibold text-white pt-2 border-t border-gray-700 mt-2"><span>Total Taxable Amount:</span><span>₹{taxable.toLocaleString('en-IN')}</span></div>
                           <div className="flex justify-between"><span>Taxes ({totalGstRate}% GST):</span><span>+ ₹{taxes.toLocaleString('en-IN')}</span></div>
-                          
-                          <div className="border-t border-gray-700 my-4"></div>
-                          
-                          <div className="flex justify-between text-orange-300"><span>Utilities (Elec/Clean/Gen):</span><span>+ ₹{utilities.toLocaleString('en-IN')}</span></div>
-                          {penalties > 0 && <div className="flex justify-between text-red-400"><span>Penalties/Damages:</span><span>+ ₹{penalties.toLocaleString('en-IN')}</span></div>}
                           
                           <div className="border-t border-gray-700 my-4"></div>
 

@@ -184,7 +184,6 @@ export default function UserDashboard() {
           <p className="text-gray-600 mt-2">Manage your facility reservations and payments.</p>
         </div>
         
-        {/* New Profile Link Button */}
         <Link 
           to="/profile" 
           className="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-800 px-4 py-2.5 rounded-lg font-semibold shadow-sm transition-colors"
@@ -249,7 +248,6 @@ export default function UserDashboard() {
                       const isPartial = booking.financials?.paymentStatus === 'PARTIAL';
                       const isCompleted = booking.financials?.paymentStatus === 'COMPLETED';
                       
-                      // MATH UPDATED: Amount Paid and Amount Due only apply to the base rent online
                       const amountPaid = isCompleted ? base : (isPartial ? advancePaid : 0);
                       const amountDue = base - amountPaid;
 
@@ -349,7 +347,6 @@ export default function UserDashboard() {
                           {/* RENDER BASED ON TOGGLE */}
                           {selectedMode === 'ONLINE' ? (
                             <div className="space-y-3 mt-4">
-                              {/* 🚨 MATH UPDATED: OPTION 1: PAY FULL RENT ONLY */}
                               <button 
                                 onClick={() => handlePayment(booking.id, 'INITIAL', 'FULL')} 
                                 disabled={processingPaymentId === booking.id}
@@ -359,7 +356,6 @@ export default function UserDashboard() {
                                 <span>₹{Number(booking.financials?.calculatedAmount).toLocaleString('en-IN')}</span>
                               </button>
 
-                              {/* 🚨 MATH UPDATED: OPTION 2: HOLD (Percentage of Rent ONLY) */}
                               {booking.financials?.isHoldingAllowed && (
                                  <button 
                                    onClick={() => handlePayment(booking.id, 'INITIAL', 'HOLD')} 
@@ -429,32 +425,44 @@ export default function UserDashboard() {
                     )
                   }
 
-                  {/* 2. CANCELLATION SUMMARY */}
+                  {/* 2. DYNAMIC CANCELLATION SUMMARY */}
                   {['PENDING_CANCELLATION', 'CANCELLED'].includes(booking.status) && (
                     <div className="mt-4 bg-gray-100 border border-gray-200 p-4 rounded-lg">
                       <h4 className="font-bold text-gray-800 flex items-center gap-2 mb-2">
-                        <AlertCircle size={18} className="text-gray-500" />
-                        Cancellation Summary
+                        {booking.status === 'CANCELLED' ? <CheckCircle size={18} className="text-green-600" /> : <AlertCircle size={18} className="text-gray-500" />}
+                        {booking.status === 'CANCELLED' && booking.financials?.paymentStatus === 'REFUNDED' ? 'Cancellation & Refund Complete' : 'Cancellation Summary'}
                       </h4>
-                      <p className="text-sm text-gray-600 mb-3">
-                        Your booking cancellation has been requested. As per policy, you are eligible for a <strong>₹{booking.financials?.refundAmount || 0}</strong> refund.
-                      </p>
 
                       {booking.financials?.refundAmount > 0 && booking.financials?.paymentStatus === 'REFUNDED' ? (
-                        <div className="bg-green-50 text-green-700 p-3 rounded-md text-sm font-semibold flex items-center gap-2 border border-green-200">
-                          <CheckCircle size={16} /> Refund Processed Successfully
-                        </div>
+                        <>
+                          <p className="text-sm text-gray-600 mb-3">
+                            Your booking was cancelled and your refund of <strong>₹{booking.financials?.refundAmount || 0}</strong> has been successfully processed.
+                          </p>
+                          <div className="bg-green-50 text-green-700 p-3 rounded-md text-sm font-semibold flex items-center gap-2 border border-green-200">
+                            <CheckCircle size={16} /> Refund Processed Successfully
+                          </div>
+                        </>
                       ) : booking.financials?.refundAmount > 0 ? (
-                        <div className="bg-orange-50 text-orange-800 p-3 rounded-md text-sm font-semibold flex items-center gap-2 border border-orange-200">
-                          <Clock size={16} /> Refund Pending Admin Verification
-                          <span className="block text-xs font-normal mt-1 text-orange-700">
-                            Once approved by the Admin, online payments will be credited in 3-5 days. Cash payments must be collected at the desk.
-                          </span>
-                        </div>
+                        <>
+                          <p className="text-sm text-gray-600 mb-3">
+                            Your booking cancellation has been requested. As per policy, you are eligible for a <strong>₹{booking.financials?.refundAmount || 0}</strong> refund.
+                          </p>
+                          <div className="bg-orange-50 text-orange-800 p-3 rounded-md text-sm font-semibold flex items-center gap-2 border border-orange-200">
+                            <Clock size={16} /> Refund Pending Admin Verification
+                            <span className="block text-xs font-normal mt-1 text-orange-700">
+                              Once approved by the Admin, online payments will be credited in 3-5 days. Cash payments must be collected at the desk.
+                            </span>
+                          </div>
+                        </>
                       ) : (
-                        <div className="bg-gray-200 text-gray-700 p-3 rounded-md text-sm font-semibold">
-                          No refund applicable for this cancellation.
-                        </div>
+                        <>
+                          <p className="text-sm text-gray-600 mb-3">
+                            Your booking has been cancelled.
+                          </p>
+                          <div className="bg-gray-200 text-gray-700 p-3 rounded-md text-sm font-semibold">
+                            No refund applicable for this cancellation.
+                          </div>
+                        </>
                       )}
                     </div>
                   )}

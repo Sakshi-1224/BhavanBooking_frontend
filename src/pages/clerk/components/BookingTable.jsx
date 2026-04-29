@@ -43,10 +43,12 @@ export default function BookingTable({ bookings, isProcessing, handleVerify, ope
             const rentPaid = isCompleted ? rent : (isPartial ? advancePaid : 0);
 
             const checkInDate = new Date(schedule.startTime);
-            const today = new Date();
+const checkOutDate = new Date(schedule.endTime); // 1. Fetch the check-out date/time
+const today = new Date();
+const now = new Date(); // 2. Get the exact current time
             checkInDate.setHours(0,0,0,0);
             today.setHours(0,0,0,0);
-            const isCheckInDay = today >= checkInDate;
+            const isCheckInDay = today >= checkInDate && now < checkOutDate;
 
             return(
               <tr key={booking.id} className="hover:bg-gray-50 transition">
