@@ -1,7 +1,7 @@
 import React from 'react';
 import { Printer, X } from 'lucide-react';
+import useSettingsStore from '../store/useSettingsStore';
 
-// Advanced Indian Number to Words Converter
 const numToWords = (num) => {
   const single = ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"];
   const double = ["Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
@@ -33,14 +33,14 @@ const getAmountInWords = (amount) => {
 };
 
 export default function InvoicePrintView({ invoice, booking, onClose }) {
+  const { settings } = useSettingsStore();
   if (!invoice || !booking) return null;
+const sacCode = settings?.defaultSacCode || '9963';
 
-  // Exact Database Numbers
   const base = Number(invoice.baseAmount) || 0;
   const additional = Number(invoice.totalAdditionalAmount) || 0;
   const discount = Number(invoice.discountAmount) || 0;
   
-  // Taxable Goods/Services
   const taxableAmount = Math.max(0, base + additional - discount);
   const cgst = Number(invoice.cgstAmount) || 0;
   const sgst = Number(invoice.sgstAmount) || 0;
@@ -51,7 +51,7 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
   const sgstRate = taxableAmount > 0 ? Number(((sgst / taxableAmount) * 100).toFixed(2)) : 0;
   const totalGstRate = cgstRate + sgstRate;
 
-  // Post-Event Non-Taxable Deductions
+
   const electricity = Number(invoice.electricityCharges) || 0;
   const cleaning = Number(invoice.cleaningCharges) || 0;
   const generator = Number(invoice.generatorCharges) || 0;
@@ -70,7 +70,7 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
       
       <div className="bg-white w-full max-w-[850px] shadow-2xl relative print:shadow-none">
         
-        {/* Action Buttons */}
+        
         <div className="flex justify-end gap-3 p-4 bg-gray-100 border-b print:hidden sticky top-0 z-10">
           <button onClick={() => window.print()} className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-md shadow hover:bg-blue-700 font-bold">
             <Printer size={18} /> Print / Save PDF
@@ -80,7 +80,6 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
           </button>
         </div>
 
-  {/* Global Print Styles */}
         <style>
           {`
             @media print {
@@ -111,7 +110,6 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
           `}
         </style>
 
-        {/* TALLY STYLE INVOICE BODY */}
         <div id="printable-invoice-area" className="p-4 text-[12px] text-black leading-tight m-4 print:m-0">
           
         <div className="text-center font-bold text-lg mb-1 tracking-wider uppercase">
@@ -120,9 +118,9 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
 
           <div className="border border-black flex flex-col">
             
-            {/* 1. Header Block */}
+           
             <div className="flex border-b border-black">
-              {/* Left Side: Company Details */}
+            
               <div className="w-1/2 border-r border-black p-2">
                 <h2 className="font-extrabold text-sm mb-1">MAHARASHTRA MANDAL, RAIPUR</h2>
                 <p>G.E. ROAD, CHOUBEY COLONY,</p>
@@ -134,7 +132,7 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
                 <p>E-Mail: maharashtramandalraipur@gmail.com</p>
               </div>
               
-              {/* Right Side: Invoice Numbers */}
+              
               <div className="w-1/2 flex flex-col">
                 <div className="flex justify-between border-b border-black h-1/2">
                   <div className="p-2 border-r border-black w-1/2">
@@ -159,7 +157,6 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
               </div>
             </div>
 
-            {/* 2. Party Details Block */}
             <div className="border-b border-black p-2">
               <p>Party: <strong className="ml-2 uppercase">{invoice.customerName}</strong></p>
               <p className="ml-10">{invoice.billingAddress || "RAIPUR"}</p>
@@ -170,7 +167,6 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
               </div>
             </div>
 
-            {/* 3. Main Item Table */}
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-black bg-gray-50 print:bg-transparent">
@@ -187,7 +183,6 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
               </thead>
               <tbody>
                 
-                {/* --- ROW 1: MAIN ITEM DETAILS --- */}
                 <tr className="align-top">
                   <td className="border-r border-black p-1 text-center">1</td>
                   <td className="border-r border-black p-2">
@@ -215,7 +210,6 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
                   <td className="p-1 text-right">{taxableAmount.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
                 </tr>
 
-                {/* --- ROW 2: CGST ALIGNMENT --- */}
                 <tr className="align-top">
                   <td className="border-r border-black p-1 text-center"></td>
                   <td className="border-r border-black p-1 text-right pr-4 font-bold pt-6">CGST</td>
@@ -228,7 +222,6 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
                   <td className="p-1 text-right pt-6">{cgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
                 </tr>
 
-                {/* --- ROW 3: SGST ALIGNMENT & SPACING FILLER --- */}
                 <tr className="align-top h-[70px]">
                   <td className="border-r border-black p-1 text-center"></td>
                   <td className="border-r border-black p-1 text-right pr-4 font-bold">SGST</td>
@@ -241,7 +234,6 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
                   <td className="p-1 text-right">{sgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
                 </tr>
 
-                {/* --- ROW 4: DEDUCTIONS --- */}
                 {totalDeductions > 0 && (
                   <tr className="border-t border-black bg-gray-50 print:bg-transparent">
                     <td colSpan="8" className="border-r border-black p-2">
@@ -264,7 +256,6 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
               </tbody>
             </table>
 
-            {/* 4. Amount in Words */}
             <div className="border-b border-black p-2 flex justify-between">
                <div className="w-3/4">
                  <p className="text-[10px] font-semibold text-gray-600 mb-0.5">Amount Chargeable (in words)</p>
@@ -273,7 +264,6 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
                <div className="w-1/4 text-right italic font-semibold pt-4">E. & O.E</div>
             </div>
 
-            {/* 5. Tally Tax Table */}
             <table className="w-full text-center border-b border-black text-[11px] border-collapse">
                <thead>
                   <tr className="bg-gray-50 print:bg-transparent">
@@ -312,13 +302,11 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
                </tbody>
             </table>
 
-            {/* 6. Tax Amount in Words */}
             <div className="border-b border-black p-2">
                <p className="text-[10px] font-semibold text-gray-600 mb-0.5">Tax Amount (in words)</p>
                <p className="font-bold italic">{getAmountInWords(totalTax)}</p>
             </div>
 
-            {/* 7. SETTLEMENT SUMMARY */}
             <div className="border-b border-black p-2 bg-gray-50 print:bg-transparent">
               <h3 className="font-bold underline mb-1 text-[11px] uppercase">Final Settlement Overview</h3>
               <div className="flex justify-between text-[11px]">
@@ -338,7 +326,6 @@ export default function InvoicePrintView({ invoice, booking, onClose }) {
               </div>
             </div>
 
-            {/* 8. Bank Details & Signature */}
             <div className="flex bg-white">
               <div className="w-1/2 border-r border-black p-2">
                 <p className="font-bold underline text-[11px] mb-1">Company's Bank Details</p>

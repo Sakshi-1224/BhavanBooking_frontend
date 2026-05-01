@@ -2,14 +2,16 @@ import { useState, useEffect } from 'react';
 import { X, Loader2, CheckCircle, AlertTriangle, LogOut as LogOutIcon, Plus, Trash2, Receipt, CreditCard } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api from '../../../api/axios';
+import useSettingsStore from '../../../store/useSettingsStore';
 
 export default function CheckoutModal({ booking, onClose, onSuccess }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isFetchingInvoice, setIsFetchingInvoice] = useState(true);
   const [invoiceData, setInvoiceData] = useState(null);
-
+const { settings } = useSettingsStore();
   // Default fallback tax rate (10%) just in case the API completely fails
-  const [taxRate, setTaxRate] = useState(0.10);
+  const defaultTaxRate = settings ? ((Number(settings.cgstPercentage) + Number(settings.sgstPercentage)) / 100) : 0.10;
+  const [taxRate, setTaxRate] = useState(defaultTaxRate);
 
   const [formData, setFormData] = useState({
     penalties: [], additionalItems: [], additionalItemName: '', additionalItemAmount: '', penaltyReason: '', penaltyAmount: '',
@@ -79,9 +81,9 @@ export default function CheckoutModal({ booking, onClose, onSuccess }) {
   // Extras
   const typedExtra = Number(formData.additionalItemAmount || 0);
   const totalExtras = (formData.additionalItems || []).reduce((sum, i) => sum + Number(i.amount), 0) + typedExtra;
-  
+  const electricityRate = settings?.electricityRate || 14;
   // Utilities & Penalties
-  const electricityCharges = Number(formData.electricityUnitsConsumed || 0) * 14;
+  const electricityCharges = Number(formData.electricityUnitsConsumed || 0) * electricityRate;
   const cleaningCharges = Number(formData.cleaningCharges || 0);
   const generatorCharges = Number(formData.generatorCharges || 0);
   const typedPenalty = Number(formData.penaltyAmount || 0);
@@ -100,7 +102,7 @@ export default function CheckoutModal({ booking, onClose, onSuccess }) {
   
   // Grand Total is now simply Taxable + Taxes
   const grandTotalCost = taxable + taxes;
-  
+  const invoiceDueDays = settings?.invoiceDueDays || 7;
   const totalPaid = base + deposit;
   const netDifference = totalPaid - grandTotalCost;
   const refundDue = netDifference > 0 ? netDifference : 0;
@@ -131,7 +133,7 @@ export default function CheckoutModal({ booking, onClose, onSuccess }) {
       if (formData.additionalItemName && formData.additionalItemAmount) finalExtras.push({ name: formData.additionalItemName, amount: Number(formData.additionalItemAmount) });
 
       const dueDate = new Date(); 
-      dueDate.setDate(dueDate.getDate() + 7); 
+      dueDate.setDate(dueDate.getDate() + invoiceDueDays); 
 
       const payload = {
         bookingId: booking.id, 
@@ -195,7 +197,7 @@ export default function CheckoutModal({ booking, onClose, onSuccess }) {
               <div className="bg-orange-50 p-4 rounded-lg border border-orange-100 shadow-sm">
                 <h3 className="text-sm font-bold text-orange-800 mb-3 flex items-center gap-2"><LogOutIcon size={16}/> Utilities & Services</h3>
                 <div className="space-y-4">
-                  <div><label className="block text-xs font-bold mb-1">Elec Units (₹14/unit)</label><input type="number" required value={formData.electricityUnitsConsumed} onChange={(e) => setFormData({...formData, electricityUnitsConsumed: e.target.value})} className="w-full p-2 border rounded" /></div>
+                  <div><label className="block text-xs font-bold mb-1">Elec Units (₹{electricityRate}/unit)</label><input type="number" required value={formData.electricityUnitsConsumed} onChange={(e) => setFormData({...formData, electricityUnitsConsumed: e.target.value})} className="w-full p-2 border rounded" /></div>
                   <div className="flex gap-4">
                       <div className="flex-1"><label className="block text-xs font-bold mb-1">Cleaning (₹)</label><input type="number" value={formData.cleaningCharges} onChange={(e) => setFormData({...formData, cleaningCharges: e.target.value})} className="w-full p-2 border rounded" /></div>
                       <div className="flex-1"><label className="block text-xs font-bold mb-1">Generator (₹)</label><input type="number" value={formData.generatorCharges} onChange={(e) => setFormData({...formData, generatorCharges: e.target.value})} className="w-full p-2 border rounded" /></div>

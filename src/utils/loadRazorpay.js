@@ -1,7 +1,7 @@
 export const loadRazorpayScript = () => {
   return new Promise((resolve) => {
     const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.src = import.meta.env.VITE_RAZORPAY_CHECKOUT_URL;
     script.onload = () => {
       resolve(true);
     };
